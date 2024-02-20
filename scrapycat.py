@@ -35,7 +35,6 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
 
     # Manage response
     if return_direct:
-        print(internal_links)
         return {"output": response}
 
     return fast_reply
