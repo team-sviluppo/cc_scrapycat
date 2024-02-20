@@ -35,6 +35,7 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
 
     # Manage response
     if return_direct:
+        print(internal_links)
         return {"output": response}
 
     return fast_reply
@@ -45,8 +46,12 @@ def crawler(page):
     global internal_links, visited_pages, queue, root_url, ingest_pdf
     try:
         if page.startswith("/") or page.startswith(f"{root_url}"):
-            log.info("Crawling page: " + page)
-            response = requests.get(page).text
+
+            log.warning("Crawling page: " + page)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
+            }
+            response = requests.get(page, headers=headers).text
             soup = BeautifulSoup(response, "html.parser")
             urls = [link["href"] for link in soup.select("a[href]")]
 
