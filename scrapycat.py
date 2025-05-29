@@ -64,7 +64,11 @@ def crawler(page):
                     else:
                         new_url = url
                     if new_url not in internal_links:
-                        if new_url.endswith(".pdf"):
+                        # Skip image URLs
+                        if new_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico')):
+                            continue
+                        # Handle PDFs based on settings
+                        elif new_url.endswith(".pdf"):
                             if ingest_pdf:
                                 internal_links.append(new_url)
                         else:

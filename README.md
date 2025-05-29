@@ -1,6 +1,6 @@
 # What is this?
 
-This is a plugin for the [Cheshire Cat Project](https://github.com/pieroit/cheshire-cat), that allow to scrape an entire website and ingest in rabbithole all website pages and PDFs
+This is a plugin for the [Cheshire Cat Project](https://github.com/pieroit/cheshire-cat), that allow to scrape an entire website and ingest in rabbithole all website pages and PDFs. Image files are automatically skipped during the scraping process
 
 # Usage
 
