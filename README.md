@@ -10,7 +10,7 @@ You can specify a base path in the URL to only process pages under that path:
 - `scrapycat www.dominio.it` - processes all pages on the site
 - `scrapycat www.dominio.it/pippo` - only processes pages under the /pippo path
 
-The ingest phase may be long, you need to wait for the cat's response with the number of URLs/PDFs ingested
+The ingest phase may be long, you need to wait for the cat's response with the number of URLs/PDFs successfully ingested. If some URLs fail to be ingested (due to server disconnections or other errors), the plugin will continue processing the remaining URLs and report how many were successful.
 
 # Settings
 

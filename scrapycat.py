@@ -39,10 +39,15 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
         root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
         crawler(root_url)
+        successful_imports = 0
         for link in internal_links:
-            cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+            try:
+                cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+                successful_imports += 1
+            except Exception as e:
+                log.error(f"Error ingesting {link}: {str(e)}")
         return_direct = True
-        response = str(len(internal_links)) + " URLs imported in rabbit hole!"
+        response = f"{successful_imports} of {len(internal_links)} URLs successfully imported in rabbit hole!"
 
     # Manage response
     if return_direct:
