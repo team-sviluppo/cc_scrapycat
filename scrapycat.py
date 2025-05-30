@@ -15,17 +15,23 @@ base_path = ""  # Base path for URL filtering
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply, cat) -> Dict:
-    global root_url
-    global ingest_pdf
-    global base_path
+    global root_url, ingest_pdf, base_path, internal_links, visited_pages, queue
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings["ingest_pdf"]:
         ingest_pdf = True
+    else:
+        ingest_pdf = False
     return_direct = False
     # Get user message
     user_message = cat.working_memory["user_message_json"]["text"]
 
     if user_message.startswith("scrapycat"):
+        # Reset all global variables to ensure a clean state for each run
+        internal_links = []
+        visited_pages = []
+        queue = []
+        base_path = ""
+        root_url = ""
         full_url = user_message.split(" ")[1]
         if full_url.endswith("/"):
             full_url = full_url[:-1]
