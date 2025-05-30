@@ -17,6 +17,7 @@ The ingest phase may be long, you need to wait for the cat's response with the n
 On the plugin settings you can set:
 
 - **Ingest PDF**: If this setting is enabled, the plugin will also ingest PDFs found on the website.
+- **Skip GET Parameters**: If this setting is enabled, the plugin will skip URLs that contain GET parameters (URLs with a question mark, like "example.com/page?param=value"). This is useful to avoid duplicate content and prevent crawling dynamic pages that might generate infinite loops.
 
 # Examples
 

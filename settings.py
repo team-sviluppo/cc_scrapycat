@@ -6,6 +6,7 @@ from enum import Enum
 # Plugin settings
 class PluginSettings(BaseModel):
     ingest_pdf: bool = False
+    skip_get_params: bool = False
 
 
 # hook to give the cat settings

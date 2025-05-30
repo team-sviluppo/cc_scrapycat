@@ -10,17 +10,22 @@ visited_pages = []  # List of visited pages during crawling
 queue = []  # Queue of unexplored pages
 root_url = ""  # Root URL of the site
 ingest_pdf = False
+skip_get_params = False  # Skip URLs with GET parameters
 base_path = ""  # Base path for URL filtering
 
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply, cat) -> Dict:
-    global root_url, ingest_pdf, base_path, internal_links, visited_pages, queue
+    global root_url, ingest_pdf, skip_get_params, base_path, internal_links, visited_pages, queue
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings["ingest_pdf"]:
         ingest_pdf = True
     else:
         ingest_pdf = False
+    if settings["skip_get_params"]:
+        skip_get_params = True
+    else:
+        skip_get_params = False
     return_direct = False
     # Get user message
     user_message = cat.working_memory["user_message_json"]["text"]
@@ -32,6 +37,7 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
         queue = []
         base_path = ""
         root_url = ""
+        skip_get_params = False  # Reset to default, will be updated from settings
         full_url = user_message.split(" ")[1]
         if full_url.endswith("/"):
             full_url = full_url[:-1]
@@ -88,6 +94,10 @@ def crawler(page):
                     if new_url not in internal_links:
                         # Check if URL matches the base path filter (if set)
                         if base_path and not new_url.replace(root_url, "").startswith(base_path):
+                            continue
+
+                        # Skip URLs with GET parameters if the setting is enabled
+                        if skip_get_params and "?" in new_url:
                             continue
 
                         # Skip image URLs and zip files
