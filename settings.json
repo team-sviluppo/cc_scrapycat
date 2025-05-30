@@ -1,3 +1,4 @@
 {
-    "ingest_pdf": true
+    "ingest_pdf": true,
+    "base_path": ""
 }

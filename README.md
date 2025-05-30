@@ -11,7 +11,10 @@ The ingest phase myq be long, you need to wait the cat response with number of u
 
 # Settings
 
-On the plugin settings you can set "Ingest PDF": If this settings is enabled the plugin ingest also pdfs presents on website.
+On the plugin settings you can set:
+
+- **Ingest PDF**: If this setting is enabled, the plugin will also ingest PDFs found on the website.
+- **Base Path**: If set, the plugin will only process URLs that start with this path. For example, if you set "/docs", only URLs like "/docs/page1" will be processed, while "/about" will be skipped. Leave empty to process all URLs.
 
 # Example
 

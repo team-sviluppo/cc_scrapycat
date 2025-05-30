@@ -10,15 +10,18 @@ visited_pages = []  # List of visited pages during crawling
 queue = []  # Queue of unexplored pages
 root_url = ""  # Root URL of the site
 ingest_pdf = False
+base_path = ""  # Base path for URL filtering
 
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply, cat) -> Dict:
     global root_url
     global ingest_pdf
+    global base_path
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings["ingest_pdf"]:
         ingest_pdf = True
+    base_path = settings["base_path"]
     return_direct = False
     # Get user message
     user_message = cat.working_memory["user_message_json"]["text"]
@@ -42,7 +45,7 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
 
 def crawler(page):
     """Crawls a webpage to find its internal/external linked URLs."""
-    global internal_links, visited_pages, queue, root_url, ingest_pdf
+    global internal_links, visited_pages, queue, root_url, ingest_pdf, base_path
     try:
         if page.startswith("/") or page.startswith(f"{root_url}"):
 
@@ -64,8 +67,12 @@ def crawler(page):
                     else:
                         new_url = url
                     if new_url not in internal_links:
-                        # Skip image URLs
-                        if new_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico')):
+                        # Check if URL matches the base path filter (if set)
+                        if base_path and not new_url.replace(root_url, "").startswith(base_path):
+                            continue
+
+                        # Skip image URLs and zip files
+                        if new_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.zip')):
                             continue
                         # Handle PDFs based on settings
                         elif new_url.endswith(".pdf"):
