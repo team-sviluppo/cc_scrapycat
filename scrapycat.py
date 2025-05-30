@@ -21,15 +21,23 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings["ingest_pdf"]:
         ingest_pdf = True
-    base_path = settings["base_path"]
     return_direct = False
     # Get user message
     user_message = cat.working_memory["user_message_json"]["text"]
 
     if user_message.startswith("scrapycat"):
-        root_url = user_message.split(" ")[1]
-        if root_url.endswith("/"):
-            root_url = root_url[:-1]
+        full_url = user_message.split(" ")[1]
+        if full_url.endswith("/"):
+            full_url = full_url[:-1]
+
+        # Extract base path from URL if present
+        import urllib.parse
+        parsed_url = urllib.parse.urlparse(full_url)
+        base_path = parsed_url.path
+
+        # Set root_url to just the scheme and netloc (domain)
+        root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
         crawler(root_url)
         for link in internal_links:
             cat.rabbit_hole.ingest_file(cat, link, 400, 100)

@@ -4,18 +4,30 @@ This is a plugin for the [Cheshire Cat Project](https://github.com/pieroit/chesh
 
 # Usage
 
-After plugin installation you need to digit scrapycat url
+After plugin installation you need to type `scrapycat` followed by the website URL.
 
-The URL must be the website root url (homepage).
-The ingest phase myq be long, you need to wait the cat response with number of urls/pdf ingested
+You can specify a base path in the URL to only process pages under that path:
+- `scrapycat www.dominio.it` - processes all pages on the site
+- `scrapycat www.dominio.it/pippo` - only processes pages under the /pippo path
+
+The ingest phase may be long, you need to wait for the cat's response with the number of URLs/PDFs ingested
 
 # Settings
 
 On the plugin settings you can set:
 
 - **Ingest PDF**: If this setting is enabled, the plugin will also ingest PDFs found on the website.
-- **Base Path**: If set, the plugin will only process URLs that start with this path. For example, if you set "/docs", only URLs like "/docs/page1" will be processed, while "/about" will be skipped. Leave empty to process all URLs.
 
-# Example
+# Examples
 
-"scrapycat https://cheshire-cat-ai.github.io/docs/"
+Process all pages on a site:
+```
+scrapycat https://cheshire-cat-ai.github.io
+```
+
+Process only pages under a specific path:
+```
+scrapycat https://cheshire-cat-ai.github.io/docs
+```
+
+This will only process URLs that start with "/docs", such as "/docs/installation", "/docs/usage", etc.
