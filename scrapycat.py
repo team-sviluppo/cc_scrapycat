@@ -10,28 +10,56 @@ visited_pages = []  # List of visited pages during crawling
 queue = []  # Queue of unexplored pages
 root_url = ""  # Root URL of the site
 ingest_pdf = False
+skip_get_params = False  # Skip URLs with GET parameters
+base_path = ""  # Base path for URL filtering
 
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply, cat) -> Dict:
-    global root_url
-    global ingest_pdf
+    global root_url, ingest_pdf, skip_get_params, base_path, internal_links, visited_pages, queue
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings["ingest_pdf"]:
         ingest_pdf = True
+    else:
+        ingest_pdf = False
+    if settings["skip_get_params"]:
+        skip_get_params = True
+    else:
+        skip_get_params = False
     return_direct = False
     # Get user message
     user_message = cat.working_memory["user_message_json"]["text"]
 
     if user_message.startswith("scrapycat"):
-        root_url = user_message.split(" ")[1]
-        if root_url.endswith("/"):
-            root_url = root_url[:-1]
+        # Reset all global variables to ensure a clean state for each run
+        internal_links = []
+        visited_pages = []
+        queue = []
+        base_path = ""
+        root_url = ""
+        skip_get_params = False  # Reset to default, will be updated from settings
+        full_url = user_message.split(" ")[1]
+        if full_url.endswith("/"):
+            full_url = full_url[:-1]
+
+        # Extract base path from URL if present
+        import urllib.parse
+        parsed_url = urllib.parse.urlparse(full_url)
+        base_path = parsed_url.path
+
+        # Set root_url to just the scheme and netloc (domain)
+        root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
         crawler(root_url)
+        successful_imports = 0
         for link in internal_links:
-            cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+            try:
+                cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+                successful_imports += 1
+            except Exception as e:
+                log.error(f"Error ingesting {link}: {str(e)}")
         return_direct = True
-        response = str(len(internal_links)) + " URLs imported in rabbit hole!"
+        response = f"{successful_imports} of {len(internal_links)} URLs successfully imported in rabbit hole!"
 
     # Manage response
     if return_direct:
@@ -42,7 +70,7 @@ def agent_fast_reply(fast_reply, cat) -> Dict:
 
 def crawler(page):
     """Crawls a webpage to find its internal/external linked URLs."""
-    global internal_links, visited_pages, queue, root_url, ingest_pdf
+    global internal_links, visited_pages, queue, root_url, ingest_pdf, base_path
     try:
         if page.startswith("/") or page.startswith(f"{root_url}"):
 
@@ -64,7 +92,19 @@ def crawler(page):
                     else:
                         new_url = url
                     if new_url not in internal_links:
-                        if new_url.endswith(".pdf"):
+                        # Check if URL matches the base path filter (if set)
+                        if base_path and not new_url.replace(root_url, "").startswith(base_path):
+                            continue
+
+                        # Skip URLs with GET parameters if the setting is enabled
+                        if skip_get_params and "?" in new_url:
+                            continue
+
+                        # Skip image URLs and zip files
+                        if new_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.zip')):
+                            continue
+                        # Handle PDFs based on settings
+                        elif new_url.endswith(".pdf"):
                             if ingest_pdf:
                                 internal_links.append(new_url)
                         else:

@@ -1,3 +1,4 @@
 {
-    "ingest_pdf": true
+    "ingest_pdf": true,
+    "skip_get_params": false
 }
