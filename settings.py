@@ -8,7 +8,7 @@ class PluginSettings(BaseModel):
     ingest_pdf: bool = False
     skip_get_params: bool = False
     max_depth: int = 0
-    allowed_roots: str = ""  # Comma-separated list of allowed root URLs
+    allowed_extra_roots: str = ""  # Comma-separated list of allowed root URLs
 
 
 # hook to give the cat settings

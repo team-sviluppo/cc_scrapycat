@@ -18,11 +18,12 @@ class ScrapyCatContext:
         self.skip_get_params: bool = False # Skip URLs with GET parameters
         self.base_path: str = ""          # Base path for URL filtering
         self.max_depth: int = 0           # Max recursion/crawling depth
-        self.allowed_roots: Set[str] # Set of allowed root URLs for filtering
+        self.allowed_extra_roots: Set[str] # Set of allowed root URLs for filtering
 
 # TODO:
 # 1. add allowlist for URLs (either in settings or in message) DONE SETTINGS
 # 2. check if the info is already present in the rabbit hole
+# 3. stopping criterion
 
 
 @hook(priority=10)
@@ -40,7 +41,7 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
-    ctx.allowed_roots = {url.strip() for url in settings["allowed_roots"].split(",") if validate_url(url.strip())}
+    ctx.allowed_extra_roots = {url.strip() for url in settings["allowed_extra_roots"].split(",") if validate_url(url.strip())}
 
     full_url = user_message.split("@scrapycat")[1] # so that if the user forgets to put a space, it still works
     if full_url.endswith("/"):
@@ -99,6 +100,7 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
 
         # Handle max_depth logic
         # -1: unlimited, 0: only starting link, >0: up to max_depth
+        # this may be redundant but in the future it may have another stopping condition, independent from the depth
         if ctx.max_depth != -1 and depth > ctx.max_depth:
             continue
 
@@ -129,9 +131,9 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                     # Extract root URL from new_url for O(1) check
                     parsed_new_url = urllib.parse.urlparse(new_url)
                     new_url_root = f"{parsed_new_url.scheme}://{parsed_new_url.netloc}"
-                    
-                    # Check if URL is internal (starts with root_url) or allowed (root is in allowed_roots)
-                    if new_url_root != ctx.root_url and new_url_root not in ctx.allowed_roots:
+
+                    # Check if URL is internal (starts with root_url) or allowed (root is in allowed_extra_roots)
+                    if new_url_root != ctx.root_url and new_url_root not in ctx.allowed_extra_roots:
                         log.warning(f"Skipping external link: {new_url} because root {new_url_root} is not in allowed roots")
                         continue
 

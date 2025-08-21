@@ -2,5 +2,5 @@
     "ingest_pdf": true,
     "skip_get_params": false,
     "max_depth": 0,
-    "allowed_roots": ""
+    "allowed_extra_roots": ""
 }
