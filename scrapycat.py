@@ -6,6 +6,7 @@ import requests
 import urllib.parse
 from cat.looking_glass.stray_cat import StrayCat
 from queue import Queue
+import re
 
 class ScrapyCatContext:
     def __init__(self) -> None:
@@ -17,10 +18,10 @@ class ScrapyCatContext:
         self.skip_get_params: bool = False # Skip URLs with GET parameters
         self.base_path: str = ""          # Base path for URL filtering
         self.max_depth: int = 0           # Max recursion/crawling depth
-        self.allowed_roots: Set[str] = set()  # Set of allowed root URLs for filtering
+        self.allowed_roots: Set[str] # Set of allowed root URLs for filtering
 
 # TODO:
-# 1. add allowlist for URLs (either in settings or in message)
+# 1. add allowlist for URLs (either in settings or in message) DONE SETTINGS
 # 2. check if the info is already present in the rabbit hole
 
 
@@ -39,10 +40,9 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
-    ctx.allowed_roots.add("https://link.opencitylabs.it")
-    ctx.allowed_roots.add("https://gitlab.com")
+    ctx.allowed_roots = {url.strip() for url in settings["allowed_roots"].split(",") if validate_url(url.strip())}
 
-    full_url = user_message.split(" ")[1]
+    full_url = user_message.split("@scrapycat")[1] # so that if the user forgets to put a space, it still works
     if full_url.endswith("/"):
         full_url = full_url[:-1]
 
@@ -68,7 +68,13 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
 
     return {"output": response}
 
-
+def validate_url(url: str) -> bool:
+    # check if the url is either https://url.com, http://url.com, https://www.url.com, http://www.url.com
+    regex = re.compile(
+        r'^(https?://)?(www\.)?([a-z0-9-]+\.[a-z]{2,})(/[^\s]*)?$',
+        re.IGNORECASE
+    )
+    return re.match(regex, url) is not None
 
 def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
     """
