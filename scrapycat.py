@@ -17,11 +17,21 @@ class ScrapyCatContext:
         self.skip_get_params: bool = False # Skip URLs with GET parameters
         self.base_path: str = ""          # Base path for URL filtering
         self.max_depth: int = 0           # Max recursion/crawling depth
+        self.allowed_roots: Set[str] = set()  # Set of allowed root URLs for filtering
+
+# TODO:
+# 1. add allowlist for URLs (either in settings or in message)
+# 2. check if the info is already present in the rabbit hole
 
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
+    # Fixed Deprecation Warning: To get `text` use dot notation instead of dictionary keys, example:`obj.text` instead of `obj["text"]`
+    user_message: str = cat.working_memory.user_message_json.text
 
+    if not user_message.startswith("@scrapycat"):
+        return fast_reply
+    
     settings = cat.mad_hatter.get_plugin().load_settings()
 
     # Initialize context for this run
@@ -29,43 +39,35 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
+    ctx.allowed_roots.add("https://link.opencitylabs.it")
+    ctx.allowed_roots.add("https://gitlab.com")
 
-    return_direct = False
-    # Get user message
-    user_message: str = cat.working_memory["user_message_json"]["text"]
+    full_url = user_message.split(" ")[1]
+    if full_url.endswith("/"):
+        full_url = full_url[:-1]
 
-    if user_message.startswith("@scrapycat"):
+    # Extract base path from URL if present
+    parsed_url = urllib.parse.urlparse(full_url)
+    ctx.base_path = parsed_url.path
 
-        full_url = user_message.split(" ")[1]
-        if full_url.endswith("/"):
-            full_url = full_url[:-1]
+    # Set root_url to just the scheme and netloc (domain)
+    ctx.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
-        # Extract base path from URL if present
-        parsed_url = urllib.parse.urlparse(full_url)
-        ctx.base_path = parsed_url.path
+    # Start crawling from the root URL
+    crawler(ctx, ctx.root_url)
+    successful_imports = 0
 
-        # Set root_url to just the scheme and netloc (domain)
-        ctx.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    # Ingest all found internal links
+    for link in ctx.internal_links:
+        try:
+            cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+            successful_imports += 1
+        except Exception as e:
+            log.error(f"Error ingesting {link}: {str(e)}")
+    response: str = f"{successful_imports} of {len(ctx.internal_links)} URLs successfully imported in rabbit hole!"
 
-        # Start crawling from the root URL
-        crawler(ctx, ctx.root_url)
-        successful_imports = 0
+    return {"output": response}
 
-        # Ingest all found internal links
-        for link in ctx.internal_links:
-            try:
-                cat.rabbit_hole.ingest_file(cat, link, 400, 100)
-                successful_imports += 1
-            except Exception as e:
-                log.error(f"Error ingesting {link}: {str(e)}")
-        return_direct = True
-        response: str = f"{successful_imports} of {len(ctx.internal_links)} URLs successfully imported in rabbit hole!"
-
-    # Manage response
-    if return_direct:
-        return {"output": response}
-
-    return fast_reply
 
 
 def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
@@ -83,7 +85,6 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
 
     ctx.queue = Queue()
     ctx.queue.put((start_url, 0))  # (url, depth)
-
     while not ctx.queue.empty():
         page, depth = ctx.queue.get()
         if page in ctx.visited_pages:
@@ -110,11 +111,22 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                     if "#" in url:
                         # Skip anchor links
                         continue
-                    # Normalize URL (handles relative and absolute)
-                    new_url = urllib.parse.urljoin(ctx.root_url, url)
-                    if not new_url.startswith(ctx.root_url):
-                        # External link
-                        # TODO ADD A SETTING TO DECIDE IF IGNORE OR NOT
+                    
+                    # Handle absolute vs relative URLs correctly
+                    if url.startswith(('http://', 'https://')):
+                        # URL is already absolute, use it as-is
+                        new_url = url
+                    else:
+                        # URL is relative, join with current page
+                        new_url = urllib.parse.urljoin(page, url)
+                    
+                    # Extract root URL from new_url for O(1) check
+                    parsed_new_url = urllib.parse.urlparse(new_url)
+                    new_url_root = f"{parsed_new_url.scheme}://{parsed_new_url.netloc}"
+                    
+                    # Check if URL is internal (starts with root_url) or allowed (root is in allowed_roots)
+                    if new_url_root != ctx.root_url and new_url_root not in ctx.allowed_roots:
+                        log.warning(f"Skipping external link: {new_url} because root {new_url_root} is not in allowed roots")
                         continue
 
                     # Check if URL matches the base path filter (if set)

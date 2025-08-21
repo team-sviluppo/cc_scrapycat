@@ -1,5 +1,5 @@
 {
     "ingest_pdf": true,
     "skip_get_params": false,
-    "max_depth": 0
+    "max_depth": 1
 }
