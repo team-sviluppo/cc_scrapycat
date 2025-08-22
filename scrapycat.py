@@ -17,7 +17,7 @@ class ScrapyCatContext:
         self.ingest_pdf: bool = False      # Whether to ingest PDFs
         self.skip_get_params: bool = False # Skip URLs with GET parameters
         self.base_path: str = ""          # Base path for URL filtering
-        self.max_depth: int = 0           # Max recursion/crawling depth (-1 for unlimited)
+        self.max_depth: int = -1           # Max recursion/crawling depth (-1 for unlimited)
         self.max_pages: int = -1          # Max pages to crawl (-1 for unlimited)   
         self.allowed_extra_roots: Set[str] # Set of allowed root URLs for filtering
 
