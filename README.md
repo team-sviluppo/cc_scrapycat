@@ -22,6 +22,9 @@ On the plugin settings you can set:
     - `-1`: No limit (standard behavior). The scraper will follow all nested links and crawl the entire site.  
     - `0`: Only the starting page is processed; no links are followed.  
     - `N > 0`: The scraper will follow links up to N levels deep from the starting page.
+- **Max Pages**: Controls the maximum number of pages to crawl.  
+    - `-1`: No limit (standard behavior). The scraper will follow all links until there are no more to follow.  
+    - `N > 0`: The scraper will stop after crawling N pages.
 - **Allowed Extra Roots**: A comma-separated list of additional root URLs that the scraper is allowed to follow if found while crawling from the starting url. This is useful for sites with multiple subdomains or (un)related domains.
 
 # Examples

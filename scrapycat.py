@@ -17,14 +17,13 @@ class ScrapyCatContext:
         self.ingest_pdf: bool = False      # Whether to ingest PDFs
         self.skip_get_params: bool = False # Skip URLs with GET parameters
         self.base_path: str = ""          # Base path for URL filtering
-        self.max_depth: int = 0           # Max recursion/crawling depth
+        self.max_depth: int = 0           # Max recursion/crawling depth (-1 for unlimited)
+        self.max_pages: int = -1          # Max pages to crawl (-1 for unlimited)   
         self.allowed_extra_roots: Set[str] # Set of allowed root URLs for filtering
 
-# TODO:
-# 1. add allowlist for URLs (either in settings or in message) DONE SETTINGS
-# 2. check if the info is already present in the rabbit hole
-# 3. stopping criterion
-
+def clean_url(url: str) -> str:
+    # Remove trailing slashes and normalize the URL
+    return url.strip().rstrip("/")
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
@@ -41,11 +40,10 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
-    ctx.allowed_extra_roots = {url.strip() for url in settings["allowed_extra_roots"].split(",") if validate_url(url.strip())}
+    ctx.allowed_extra_roots = {clean_url(url) for url in settings["allowed_extra_roots"].split(",") if validate_url(url.strip())}
+    ctx.max_pages = settings["max_pages"]
 
-    full_url = user_message.split("@scrapycat")[1] # so that if the user forgets to put a space, it still works
-    if full_url.endswith("/"):
-        full_url = full_url[:-1]
+    full_url = clean_url(user_message.split(" ")[1])
 
     # Extract base path from URL if present
     parsed_url = urllib.parse.urlparse(full_url)
@@ -70,9 +68,9 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     return {"output": response}
 
 def validate_url(url: str) -> bool:
-    # check if the url is either https://url.com, http://url.com, https://www.url.com, http://www.url.com
+    # Check if the URL is valid, allowing for subdomains (e.g., https://sub.domain.com)
     regex = re.compile(
-        r'^(https?://)?(www\.)?([a-z0-9-]+\.[a-z]{2,})(/[^\s]*)?$',
+        r'^(https?://)?([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$',
         re.IGNORECASE
     )
     return re.match(regex, url) is not None
@@ -94,16 +92,22 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
     ctx.queue.put((start_url, 0))  # (url, depth)
     while not ctx.queue.empty():
         page, depth = ctx.queue.get()
-        if page in ctx.visited_pages:
-            continue
-        ctx.visited_pages.add(page)
+        # Check max_pages limit before processing next page
+        if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
+            log.warning(f"Reached max_pages limit of {ctx.max_pages}. Stopping crawl.")
+            break
 
         # Handle max_depth logic
         # -1: unlimited, 0: only starting link, >0: up to max_depth
-        # this may be redundant but in the future it may have another stopping condition, independent from the depth
         if ctx.max_depth != -1 and depth > ctx.max_depth:
             continue
 
+        if page in ctx.visited_pages:
+            continue
+
+        ctx.visited_pages.add(page)
+
+    
         try:
             # Only crawl internal pages (relative or under root_url)
             if page.startswith("/") or page.startswith(f"{ctx.root_url}"):
@@ -161,10 +165,7 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                     # - max_depth == -1 (unlimited)
                     # - or next depth <= max_depth
                     # - and not already visited
-                    if (
-                        (ctx.max_depth == -1 or depth + 1 <= ctx.max_depth)
-                        and new_url not in ctx.visited_pages
-                    ):
+                    if new_url not in ctx.visited_pages:
                         ctx.queue.put((new_url, depth + 1))
         except Exception as e:
             log.warning(f"Error crawling {page}: {e}")
