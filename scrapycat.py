@@ -8,22 +8,29 @@ from cat.looking_glass.stray_cat import StrayCat
 from queue import Queue
 import re
 
+
 class ScrapyCatContext:
     def __init__(self) -> None:
-        self.internal_links: Set[str] = set()  # Set of internal URLs on the site (unique)
-        self.visited_pages: Set[str] = set()   # Set of visited pages during crawling
-        self.queue: Queue[Tuple[str, int]] = Queue()  # Queue of (url, depth) tuples for BFS
-        self.root_url: str = ""           # Root URL of the site
-        self.ingest_pdf: bool = False      # Whether to ingest PDFs
-        self.skip_get_params: bool = False # Skip URLs with GET parameters
-        self.base_path: str = ""          # Base path for URL filtering
-        self.max_depth: int = -1           # Max recursion/crawling depth (-1 for unlimited)
-        self.max_pages: int = -1          # Max pages to crawl (-1 for unlimited)   
-        self.allowed_extra_roots: Set[str] # Set of allowed root URLs for filtering
+        self.internal_links: Set[str] = (
+            set()
+        )  # Set of internal URLs on the site (unique)
+        self.visited_pages: Set[str] = set()  # Set of visited pages during crawling
+        self.queue: Queue[Tuple[str, int]] = (
+            Queue()
+        )  # Queue of (url, depth) tuples for BFS
+        self.root_url: str = ""  # Root URL of the site
+        self.ingest_pdf: bool = False  # Whether to ingest PDFs
+        self.skip_get_params: bool = False  # Skip URLs with GET parameters
+        self.base_path: str = ""  # Base path for URL filtering
+        self.max_depth: int = -1  # Max recursion/crawling depth (-1 for unlimited)
+        self.max_pages: int = -1  # Max pages to crawl (-1 for unlimited)
+        self.allowed_extra_roots: Set[str]  # Set of allowed root URLs for filtering
+
 
 def clean_url(url: str) -> str:
     # Remove trailing slashes and normalize the URL
     return url.strip().rstrip("/")
+
 
 @hook(priority=10)
 def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
@@ -32,7 +39,7 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
 
     if not user_message.startswith("@scrapycat"):
         return fast_reply
-    
+
     settings = cat.mad_hatter.get_plugin().load_settings()
 
     # Initialize context for this run
@@ -40,7 +47,11 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
-    ctx.allowed_extra_roots = {clean_url(url) for url in settings["allowed_extra_roots"].split(",") if validate_url(url.strip())}
+    ctx.allowed_extra_roots = {
+        clean_url(url)
+        for url in settings["allowed_extra_roots"].split(",")
+        if validate_url(url.strip())
+    }
     ctx.max_pages = settings["max_pages"]
 
     full_url = clean_url(user_message.split(" ")[1])
@@ -53,7 +64,7 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
     # Start crawling from the root URL
-    crawler(ctx, ctx.root_url)
+    crawler(ctx, full_url)
     successful_imports = 0
 
     # Ingest all found internal links
@@ -63,17 +74,20 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
             successful_imports += 1
         except Exception as e:
             log.error(f"Error ingesting {link}: {str(e)}")
-    response: str = f"{successful_imports} of {len(ctx.internal_links)} URLs successfully imported in rabbit hole!"
+    response: str = (
+        f"{successful_imports} of {len(ctx.internal_links)} URLs successfully imported in rabbit hole!"
+    )
 
     return {"output": response}
+
 
 def validate_url(url: str) -> bool:
     # Check if the URL is valid, allowing for subdomains (e.g., https://sub.domain.com)
     regex = re.compile(
-        r'^(https?://)?([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$',
-        re.IGNORECASE
+        r"^(https?://)?([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$", re.IGNORECASE
     )
     return re.match(regex, url) is not None
+
 
 def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
     """
@@ -86,7 +100,6 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
         - max_depth == 0: only analyze the starting link
         - max_depth > 0: crawl up to max_depth levels
     """
-    
 
     ctx.queue = Queue()
     ctx.queue.put((start_url, 0))  # (url, depth)
@@ -107,7 +120,6 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
 
         ctx.visited_pages.add(page)
 
-    
         try:
             # Only crawl internal pages (relative or under root_url)
             if page.startswith("/") or page.startswith(f"{ctx.root_url}"):
@@ -123,26 +135,33 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                     if "#" in url:
                         # Skip anchor links
                         continue
-                    
+
                     # Handle absolute vs relative URLs correctly
-                    if url.startswith(('http://', 'https://')):
+                    if url.startswith(("http://", "https://")):
                         # URL is already absolute, use it as-is
                         new_url = url
                     else:
                         # URL is relative, join with current page
                         new_url = urllib.parse.urljoin(page, url)
-                    
+
                     # Extract root URL from new_url for O(1) check
                     parsed_new_url = urllib.parse.urlparse(new_url)
                     new_url_root = f"{parsed_new_url.scheme}://{parsed_new_url.netloc}"
 
                     # Check if URL is internal (starts with root_url) or allowed (root is in allowed_extra_roots)
-                    if new_url_root != ctx.root_url and new_url_root not in ctx.allowed_extra_roots:
-                        log.warning(f"Skipping external link: {new_url} because root {new_url_root} is not in allowed roots")
+                    if (
+                        new_url_root != ctx.root_url
+                        and new_url_root not in ctx.allowed_extra_roots
+                    ):
+                        log.warning(
+                            f"Skipping external link: {new_url} because root {new_url_root} is not in allowed roots"
+                        )
                         continue
 
                     # Check if URL matches the base path filter (if set)
-                    if ctx.base_path and not new_url.replace(ctx.root_url, "").startswith(ctx.base_path):
+                    if ctx.base_path and not new_url.replace(
+                        ctx.root_url, ""
+                    ).startswith(ctx.base_path):
                         continue
 
                     # Skip URLs with GET parameters if the setting is enabled
@@ -150,7 +169,19 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                         continue
 
                     # Skip image URLs and zip files
-                    if new_url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.zip')):
+                    if new_url.lower().endswith(
+                        (
+                            ".jpg",
+                            ".jpeg",
+                            ".png",
+                            ".gif",
+                            ".bmp",
+                            ".svg",
+                            ".webp",
+                            ".ico",
+                            ".zip",
+                        )
+                    ):
                         continue
 
                     # Handle PDFs based on settings
