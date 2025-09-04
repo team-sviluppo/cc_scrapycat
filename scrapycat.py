@@ -162,7 +162,7 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
             # Only crawl internal pages (relative or under root_url)
             if page.startswith("/") or page.startswith(f"{ctx.root_url}"):
                 log.warning("Crawling page: " + page)
-                # Assicurati che la pagina corrente sia inclusa negli internal_links
+                # The current page is included in internal_links
                 ctx.internal_links.add(page)
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
@@ -230,17 +230,17 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                             ctx.internal_links.add(new_url)
                         continue
 
-                    # Decide se includere questo URL in internal_links / queue
+                    # Decides whether to include this URL in internal_links / queue
                     next_depth = depth + 1
-                    # Se è impostato un max_depth e il prossimo depth lo supererebbe, non lo aggiungiamo
-                    # Confrontiamo direttamente next_depth > max_depth (senza +1)
+                    # If max_depth is set and the next depth would exceed it, we don't add it
+                    # We directly compare next_depth > max_depth (without +1)
                     if ctx.max_depth != -1 and next_depth > ctx.max_depth:
-                        # Non aggiungiamo né in internal_links né in coda
+                        # We don't add it to internal_links or the queue
                         continue
 
                     # Add to internal links set
                     ctx.internal_links.add(new_url)
-                    # Metti in coda per crawling se non ancora visitato
+                    # Add to queue for crawling if not yet visited
                     if new_url not in ctx.visited_pages:
                         ctx.queue.put((new_url, next_depth))
         except Exception as e:
