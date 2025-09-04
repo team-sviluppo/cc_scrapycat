@@ -10,6 +10,7 @@ class PluginSettings(BaseModel):
     max_depth: int = -1
     max_pages: int = -1
     allowed_extra_roots: str = ""  # Comma-separated list of allowed root URLs
+    use_crawl4ai: bool = False
 
 
 # hook to give the cat settings

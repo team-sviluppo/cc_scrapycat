@@ -6,7 +6,26 @@ import requests
 import urllib.parse
 from cat.looking_glass.stray_cat import StrayCat
 from queue import Queue
+from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
+
 import re
+import os
+import asyncio
+
+import subprocess
+
+
+def run_crawl4ai_setup():
+    try:
+        # Runs the setup command just like in the shell
+        subprocess.run(["crawl4ai-setup"], check=True)
+        log.info("Crawl4AI setup completed successfully.")
+        return "Crawl4AI setup completed successfully."
+    except subprocess.CalledProcessError as e:
+        log.error("Error during Crawl4AI setup:", e)
+        return "Error during Crawl4AI setup."
 
 
 class ScrapyCatContext:
@@ -25,6 +44,7 @@ class ScrapyCatContext:
         self.max_depth: int = -1  # Max recursion/crawling depth (-1 for unlimited)
         self.max_pages: int = -1  # Max pages to crawl (-1 for unlimited)
         self.allowed_extra_roots: Set[str]  # Set of allowed root URLs for filtering
+        self.use_crawl4ai: bool = False  # Whether to use crawl4ai for crawling
 
 
 def clean_url(url: str) -> str:
@@ -40,6 +60,11 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     if not user_message.startswith("@scrapycat"):
         return fast_reply
 
+    if user_message == "@scrapycat crawl4ai-setup":
+        result = run_crawl4ai_setup()
+        fast_reply["output"] = result
+        return fast_reply
+
     settings = cat.mad_hatter.get_plugin().load_settings()
 
     # Initialize context for this run
@@ -47,6 +72,7 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     ctx.ingest_pdf = settings["ingest_pdf"]
     ctx.skip_get_params = settings["skip_get_params"]
     ctx.max_depth = settings["max_depth"]
+    ctx.use_crawl4ai = settings["use_crawl4ai"]
     ctx.allowed_extra_roots = {
         clean_url(url)
         for url in settings["allowed_extra_roots"].split(",")
@@ -67,10 +93,22 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     crawler(ctx, full_url)
     successful_imports = 0
 
+    log.info("Totale links interni trovati: " + str(len(ctx.internal_links)))
     # Ingest all found internal links
     for link in ctx.internal_links:
         try:
-            cat.rabbit_hole.ingest_file(cat, link, 400, 100)
+            if ctx.use_crawl4ai:
+                # Use crawl4ai for fetching and processing the page
+                markdown_content = asyncio.run(crawl4i(link))
+                output_file = "ocrcontent.md"
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(markdown_content)
+                metadata = {"url": link, "source": link}
+                cat.rabbit_hole.ingest_file(cat, output_file, 1024, 256, metadata)
+                os.remove(output_file)
+            else:
+                # Use default ingestion method
+                cat.rabbit_hole.ingest_file(cat, link, 400, 100)
             successful_imports += 1
         except Exception as e:
             log.error(f"Error ingesting {link}: {str(e)}")
@@ -124,6 +162,8 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
             # Only crawl internal pages (relative or under root_url)
             if page.startswith("/") or page.startswith(f"{ctx.root_url}"):
                 log.warning("Crawling page: " + page)
+                # Assicurati che la pagina corrente sia inclusa negli internal_links
+                ctx.internal_links.add(page)
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
                 }
@@ -190,13 +230,43 @@ def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
                             ctx.internal_links.add(new_url)
                         continue
 
+                    # Decide se includere questo URL in internal_links / queue
+                    next_depth = depth + 1
+                    # Se è impostato un max_depth e il prossimo depth lo supererebbe, non lo aggiungiamo
+                    # Confrontiamo direttamente next_depth > max_depth (senza +1)
+                    if ctx.max_depth != -1 and next_depth > ctx.max_depth:
+                        # Non aggiungiamo né in internal_links né in coda
+                        continue
+
                     # Add to internal links set
                     ctx.internal_links.add(new_url)
-                    # Only queue for crawling if:
-                    # - max_depth == -1 (unlimited)
-                    # - or next depth <= max_depth
-                    # - and not already visited
+                    # Metti in coda per crawling se non ancora visitato
                     if new_url not in ctx.visited_pages:
-                        ctx.queue.put((new_url, depth + 1))
+                        ctx.queue.put((new_url, next_depth))
         except Exception as e:
             log.warning(f"Error crawling {page}: {e}")
+
+
+async def crawl4i(url: str) -> str:
+    if not url.endswith(".pdf"):
+        async with AsyncWebCrawler() as mdcrawler:
+            config = CrawlerRunConfig(
+                excluded_tags=["form", "header", "footer", "nav"],
+                exclude_social_media_links=True,
+                exclude_external_images=True,
+                remove_overlay_elements=True,
+            )
+            md_generator = DefaultMarkdownGenerator(
+                options={"ignore_links": True, "ignore_images": True}
+            )
+            config.markdown_generator = md_generator
+            result = await mdcrawler.arun(url, config=config)
+            return result.markdown
+    else:
+        pdf_crawler_strategy = PDFCrawlerStrategy()
+        async with AsyncWebCrawler(crawler_strategy=pdf_crawler_strategy) as pdfcrawler:
+            pdf_scraping_strategy = PDFContentScrapingStrategy()
+            run_config = CrawlerRunConfig(scraping_strategy=pdf_scraping_strategy)
+            result = await pdfcrawler.arun(url=url, config=run_config)
+            if result.markdown and hasattr(result.markdown, "raw_markdown"):
+                return result.markdown.raw_markdown
