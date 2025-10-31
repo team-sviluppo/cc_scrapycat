@@ -4,7 +4,9 @@ This plugin for the [Cheshire Cat Project](https://github.com/pieroit/cheshire-c
 
 # Usage
 
-After installation, type `@scrapycat` followed by the website URL to scrape the website.
+After installation, send a message with `@scrapycat` followed by the website URL to scrape the website (recursively).
+
+The ingest phase may be long, you need to wait for the cat's response with the number of URLs/PDFs successfully ingested. If some URLs fail to be ingested (due to server disconnections or other errors), the plugin will continue processing the remaining URLs and report how many were successful.
 
 ## Basic Usage
 
@@ -22,7 +24,7 @@ Multiple starting URLs with allowed external roots:
 Example:
 
 ```bash
-@scrapycat https://www.example.com https://www.example2.com/subpath --allow https://www.external.example.com
+@scrapycat https://www.example.com www.example2.com/subpath --allow external.example.com https://external.com
 ```
 
 - Starts crawling from both` example.com` and `example2.com/subpath`
@@ -31,7 +33,7 @@ Example:
 
 # Settings
 
-
+On the plugin settings you can set:
 
 ## Basic
 
@@ -60,28 +62,12 @@ Example:
 
 > Saving settings automatically updates the WhiteRabbit scheduler
 
-# Examples
-
-## Basic
-
-Scrape all pages:
-```bash
-@scrapycat https://cheshire-cat-ai.github.io
-```
-
-Scrape pages under a path:
-```bash
-@scrapycat https://cheshire-cat-ai.github.io/docs
-```
-
-## Advanced
-
-Multiple starting URLs with allowed external roots:
-@scrapycat https://www.example.com https://www.example2.com/subpath --allow https://www.external.example.com
-
 # Setup
 
 First-time setup for Crawl4AI:
+
+```bash
 @scrapycat crawl4ai-setup
+```
 
 Installs required packages. Wait for the "Crawl4AI setup completed successfully." message.
