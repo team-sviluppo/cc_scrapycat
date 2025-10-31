@@ -41,11 +41,13 @@ On the plugin settings you can set:
 - Skip GET Parameters: Ignore URLs with ?param=value to prevent duplicates or infinite loops
 - _Use Crawl4AI_: Enables Crawl4AI parsing and Markdown ingestion (requires setup)
 - Follow Robots.txt: Only accept URLs allowed by robots.txt (default False)
-- Max Depth: How many levels of links to follow
+- Max Depth: How many levels of links to follow:
   - `-1`: No limit
   - `0`: Only the starting page
   - `N > 0`: Up to N levels deep
-- Max Pages: Maximum number of pages to crawl (-1 = no limit)
+- Max Pages: Maximum number of pages to crawl:
+  - `-1`: No limit
+  - `N > 0`: Up to N pages
 - Allowed Extra Roots: Comma-separated list of additional root URLs
 
 ## Performance
