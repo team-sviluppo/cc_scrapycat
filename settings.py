@@ -1,19 +1,99 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from cat.mad_hatter.decorators import plugin
-from enum import Enum
 
 
 # Plugin settings
 class PluginSettings(BaseModel):
-    ingest_pdf: bool = False
-    skip_get_params: bool = False
-    max_depth: int = -1
-    max_pages: int = -1
-    allowed_extra_roots: str = ""  # Comma-separated list of allowed root URLs
-    use_crawl4ai: bool = False
+    ingest_pdf: bool = Field(
+        default=False,
+        title="Ingest PDF files",
+        description="Whether to ingest PDF files found during crawling"
+    )
+    skip_get_params: bool = Field(
+        default=False,
+        title="Skip URLs with GET parameters",
+        description="Skip crawling URLs that contain GET parameters (?param=value)"
+    )
+    use_crawl4ai: bool = Field(
+        default=False,
+        title="Use crawl4ai for advanced crawling",
+        description="Enable crawl4ai for better content extraction and JavaScript rendering"
+    )
+    follow_robots_txt: bool = Field(
+        default=False,
+        title="Follow robots.txt",
+        description="Respect robots.txt files when crawling. If enabled, only crawl URLs allowed by robots.txt"
+    )
+    max_depth: int = Field(
+        default=-1,
+        title="Maximum crawling depth",
+        description="Maximum recursion depth for crawling (-1 for unlimited)"
+    )
+    max_pages: int = Field(
+        default=-1,
+        title="Maximum pages to crawl",
+        description="Maximum number of pages to crawl (-1 for unlimited)"
+    )
+    allowed_extra_roots: str = Field(
+        default="",
+        title="Allowed extra root URLs",
+        description="Comma-separated list of additional allowed root URLs for external crawling"
+    )
+    max_workers: int = Field(
+        default=1,
+        title="Maximum concurrent workers",
+        description="Number of concurrent threads for parallel crawling"
+    )
+    chunk_size: int = Field(
+        default=512,
+        title="Text chunk size",
+        description="Size of text chunks for document ingestion (in characters)"
+    )
+    chunk_overlap: int = Field(
+        default=128,
+        title="Chunk overlap",
+        description="Overlap between consecutive text chunks (in characters)"
+    )
+    scheduled_command: str = Field(
+        default="",
+        title="Scheduled ScrapyCat command",
+        description="Full @scrapycat command to run on schedule (e.g., '@scrapycat https://example.com'). Leave empty to disable scheduling."
+    )
+    schedule_hour: int = Field(
+        default=2,
+        title="Schedule hour (24h format) UTC+0",
+        description="Hour of the day to run the scheduled command (0-23)",
+    )
+    schedule_minute: int = Field(
+        default=0,
+        title="Schedule minute",
+        description="Minute of the hour to run the scheduled command (0-59)",
+    )
+
+    @validator('schedule_hour')
+    def validate_schedule_hour(cls, v):
+        """Validate that schedule hour is between 0 and 23"""
+        if not 0 <= v <= 23:
+            raise ValueError('Schedule hour must be between 0 and 23')
+        return v
+
+    @validator('schedule_minute')
+    def validate_schedule_minute(cls, v):
+        """Validate that schedule minute is between 0 and 59"""
+        if not 0 <= v <= 59:
+            raise ValueError('Schedule minute must be between 0 and 59')
+        return v
+
+    @validator('scheduled_command')
+    def validate_scheduled_command(cls, v):
+        """Validate that scheduled command starts with @scrapycat if not empty"""
+        if v.strip() and not v.strip().startswith('@scrapycat'):
+            raise ValueError('Scheduled command must start with @scrapycat or be empty')
+        return v
+
 
 
 # hook to give the cat settings
 @plugin
-def settings_schema():
-    return PluginSettings.schema()
+def settings_model():
+    return PluginSettings
