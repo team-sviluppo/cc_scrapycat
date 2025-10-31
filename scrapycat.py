@@ -100,6 +100,16 @@ def clean_url(url: str) -> str:
     return url.strip().rstrip("/")
 
 
+def normalize_url_with_protocol(url: str) -> str:
+    """
+    Ensure URL has a protocol. If no protocol is specified, prepend https://
+    """
+    url = url.strip()
+    if not url.startswith(('http://', 'https://')):
+        return f"https://{url}"
+    return url
+
+
 def normalize_domain(domain_or_url: str) -> str:
     """
     Normalize a domain or URL to a consistent format for comparison.
@@ -204,11 +214,11 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     # Extract starting URLs and allowed URLs
     if allow_index == -1:
         # No --allow flag, all URLs after @scrapycat are starting URLs
-        starting_urls: List[str] = [clean_url(url) for url in parts[1:] if validate_url(url)]
+        starting_urls: List[str] = [normalize_url_with_protocol(clean_url(url)) for url in parts[1:] if validate_url(url)]
         command_allowed_urls: List[str] = []
     else:
         # Split at --allow flag
-        starting_urls = [clean_url(url) for url in parts[1:allow_index] if validate_url(url)]
+        starting_urls = [normalize_url_with_protocol(clean_url(url)) for url in parts[1:allow_index] if validate_url(url)]
         # Allow more flexible validation for allowed URLs (domains without protocols are OK)
         command_allowed_urls = []
         for url in parts[allow_index + 1:]:
@@ -234,7 +244,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     # Build allowed domains set (for single-page scraping only, no recursion)
     # 1. Add domains from settings (normalize them for consistency)
     settings_allowed_urls: List[str] = [
-        url.strip() for url in settings.get("allowed_extra_roots", "").split(",")
+        normalize_url_with_protocol(url.strip()) for url in settings.get("allowed_extra_roots", "").split(",")
         if url.strip() and validate_url(url.strip())
     ]
     for url in settings_allowed_urls:
@@ -242,7 +252,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     
     # 2. Add domains from command --allow argument
     for url in command_allowed_urls:
-        ctx.allowed_domains.add(normalize_domain(url))
+        normalized_url = normalize_url_with_protocol(url)
+        ctx.allowed_domains.add(normalize_domain(normalized_url))
 
     ctx.max_pages = settings.get("max_pages", -1)
     ctx.max_workers = settings.get("max_workers", 1)  # Default to 1 if not set
@@ -353,11 +364,11 @@ def validate_url(url: str) -> bool:
     # Check if the URL is valid, allowing for subdomains and handling domains without protocols
     url = url.strip()
     
-    # If it doesn't have a protocol, it might be just a domain
+    # If it doesn't have a protocol, it might be a domain with or without a path
     if not url.startswith(('http://', 'https://')):
-        # Check if it's a valid domain format
+        # Check if it's a valid domain format (with optional path)
         domain_regex: re.Pattern = re.compile(
-            r"^([a-z0-9-]+\.)+[a-z]{2,}$", re.IGNORECASE
+            r"^([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$", re.IGNORECASE
         )
         return re.match(domain_regex, url) is not None
     
