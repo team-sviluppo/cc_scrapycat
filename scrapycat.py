@@ -1,272 +1,179 @@
 from cat.mad_hatter.decorators import hook
-from typing import Dict, Set, Tuple
+from typing import Dict, List, Any
 from cat.log import log
-from bs4 import BeautifulSoup
-import requests
-import urllib.parse
 from cat.looking_glass.stray_cat import StrayCat
-from queue import Queue
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
-
-import re
 import os
 import asyncio
+import urllib.parse
 
-import subprocess
+from .core.context import ScrapyCatContext
+from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
+from .utils.robots import load_robots_txt
+from .integrations.crawl4ai import run_crawl4ai_setup, crawl4i, CRAWL4AI_AVAILABLE
+from .core.crawler import crawler
 
 
-def run_crawl4ai_setup():
+def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
+    """Process a scrapycat command and return the result message"""
+    
+    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
+
+    # Parse command arguments
+    parts: List[str] = user_message.split()
+    if len(parts) < 2:
+        return "Usage: @scrapycat <url1> [url2 ...] [--allow <allowed_url1> [allowed_url2 ...]]"
+    
+    # Find --allow flag position
+    allow_index: int = -1
+    for i, part in enumerate(parts):
+        if part == "--allow":
+            allow_index = i
+            break
+    
+    # Extract starting URLs and allowed URLs
+    if allow_index == -1:
+        # No --allow flag, all URLs after @scrapycat are starting URLs
+        starting_urls: List[str] = [normalize_url_with_protocol(clean_url(url)) for url in parts[1:] if validate_url(url)]
+        command_allowed_urls: List[str] = []
+    else:
+        # Split at --allow flag
+        starting_urls = [normalize_url_with_protocol(clean_url(url)) for url in parts[1:allow_index] if validate_url(url)]
+        # Allow more flexible validation for allowed URLs (domains without protocols are OK)
+        command_allowed_urls = []
+        for url in parts[allow_index + 1:]:
+            cleaned_url: str = clean_url(url)
+            if validate_url(cleaned_url):
+                command_allowed_urls.append(cleaned_url)
+            else:
+                # Log validation issues for debugging
+                log.warning(f"Invalid allowed URL ignored: {cleaned_url}")
+    
+    if not starting_urls:
+        log.error("No valid starting URLs provided")
+        return "Error: No valid starting URLs provided"
+
+    # Initialize context for this run
+    ctx: ScrapyCatContext = ScrapyCatContext()
+    ctx.ingest_pdf = settings.get("ingest_pdf", False)
+    ctx.skip_get_params = settings.get("skip_get_params", False)
+    ctx.max_depth = settings.get("max_depth", -1)
+    ctx.use_crawl4ai = settings.get("use_crawl4ai", False)
+    ctx.follow_robots_txt = settings.get("follow_robots_txt", False)
+
+    # Build allowed domains set (for single-page scraping only, no recursion)
+    # 1. Add domains from settings (normalize them for consistency)
+    settings_allowed_urls: List[str] = [
+        normalize_url_with_protocol(url.strip()) for url in settings.get("allowed_extra_roots", "").split(",")
+        if url.strip() and validate_url(url.strip())
+    ]
+    for url in settings_allowed_urls:
+        ctx.allowed_domains.add(normalize_domain(url))
+    
+    # 2. Add domains from command --allow argument
+    for url in command_allowed_urls:
+        normalized_url = normalize_url_with_protocol(url)
+        ctx.allowed_domains.add(normalize_domain(normalized_url))
+
+    ctx.max_pages = settings.get("max_pages", -1)
+    ctx.max_workers = settings.get("max_workers", 1)  # Default to 1 if not set
+    ctx.chunk_size = settings.get("chunk_size", 512)  # Default to 512 if not set
+    ctx.chunk_overlap = settings.get("chunk_overlap", 128)  # Default to 128 if not set
+
+    # Check if crawl4ai is requested but not available
+    if ctx.use_crawl4ai and not CRAWL4AI_AVAILABLE:
+        log.warning("crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling.")
+        ctx.use_crawl4ai = False
+
+    # Extract root domains and paths from starting URLs
+    ctx.root_domains = set()
+    ctx.allowed_paths = set()
+    for url in starting_urls:
+        parsed_url: urllib.parse.ParseResult = urllib.parse.urlparse(url)
+        ctx.root_domains.add(normalize_domain(parsed_url.netloc))
+        # Add the path (or "/" if empty) to allowed paths
+        path: str = parsed_url.path or "/"
+        ctx.allowed_paths.add(path)
+    
+    # Preload robots.txt for all starting domains if robots.txt following is enabled
+    if ctx.follow_robots_txt:
+        all_domains = ctx.root_domains.union(ctx.allowed_domains)
+        for domain in all_domains:
+            load_robots_txt(ctx, domain)
+        log.info(f"Robots.txt preloaded for {len(all_domains)} domains")
+
+    log.info(f"ScrapyCat started: {len(starting_urls)} URLs, max_pages={ctx.max_pages}, max_depth={ctx.max_depth}, workers={ctx.max_workers}, robots.txt={ctx.follow_robots_txt}")
+    if ctx.allowed_domains:
+        log.info(f"Single-page domains configured: {len(ctx.allowed_domains)} domains")
+    if ctx.root_domains:
+        log.info(f"Recursive domains configured: {len(ctx.root_domains)} domains")
+
+    # Start crawling from all starting URLs
     try:
-        # Runs the setup command just like in the shell
-        subprocess.run(["crawl4ai-setup"], check=True)
-        log.info("Crawl4AI setup completed successfully.")
-        return "Crawl4AI setup completed successfully."
-    except subprocess.CalledProcessError as e:
-        log.error("Error during Crawl4AI setup:", e)
-        return "Error during Crawl4AI setup."
+        crawler(ctx, cat, starting_urls)
+        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
+        
+        # Sequential ingestion after parallel scraping is complete
+        if not ctx.scraped_pages:
+            return "No pages were successfully scraped"
+        
+        ingested_count: int = 0
+        failed_count: int = 0
+        for i, scraped_url in enumerate(ctx.scraped_pages):
+            try:
+                if ctx.use_crawl4ai and CRAWL4AI_AVAILABLE:
+                    # Use crawl4ai for content extraction
+                    try:
+                        markdown_content: str = asyncio.run(crawl4i(scraped_url))
+                        output_file: str = "temp_crawl4ai_content.md"
+                        with open(output_file, "w", encoding="utf-8") as f:
+                            f.write(markdown_content)
+                        metadata: Dict[str, str] = {"url": scraped_url, "source": scraped_url}
+                        cat.rabbit_hole.ingest_file(cat, output_file, ctx.chunk_size, ctx.chunk_overlap, metadata)
+                        os.remove(output_file)
+                        ingested_count += 1
+                    except Exception as crawl4ai_error:
+                        log.warning(f"crawl4ai failed for {scraped_url}, falling back to default method: {str(crawl4ai_error)}")
+                        # Fallback to default method
+                        cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap)
+                        ingested_count += 1
+                else:
+                    # Use default ingestion method
+                    cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap)
+                    ingested_count += 1
+                
+                # Send progress update
+                cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
+                
+            except Exception as e:
+                failed_count += 1
+                log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
+                # Continue with next page even if one fails
+        
+        log.info(f"Ingestion completed: {ingested_count} successful, {failed_count} failed")
+        response: str = f"{ingested_count} URLs successfully imported, {failed_count} failed"
+
+    except Exception as e:
+        log.error(f"ScrapyCat operation failed: {str(e)}")
+        response = f"ScrapyCat failed: {str(e)}"
+    finally:
+        ctx.session.close()
+
+    return response
 
 
-class ScrapyCatContext:
-    def __init__(self) -> None:
-        self.internal_links: Set[str] = (
-            set()
-        )  # Set of internal URLs on the site (unique)
-        self.visited_pages: Set[str] = set()  # Set of visited pages during crawling
-        self.queue: Queue[Tuple[str, int]] = (
-            Queue()
-        )  # Queue of (url, depth) tuples for BFS
-        self.root_url: str = ""  # Root URL of the site
-        self.ingest_pdf: bool = False  # Whether to ingest PDFs
-        self.skip_get_params: bool = False  # Skip URLs with GET parameters
-        self.base_path: str = ""  # Base path for URL filtering
-        self.max_depth: int = -1  # Max recursion/crawling depth (-1 for unlimited)
-        self.max_pages: int = -1  # Max pages to crawl (-1 for unlimited)
-        self.allowed_extra_roots: Set[str]  # Set of allowed root URLs for filtering
-        self.use_crawl4ai: bool = False  # Whether to use crawl4ai for crawling
-
-
-def clean_url(url: str) -> str:
-    # Remove trailing slashes and normalize the URL
-    return url.strip().rstrip("/")
-
-
-@hook(priority=10)
+@hook(priority=9)
 def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
-    # Fixed Deprecation Warning: To get `text` use dot notation instead of dictionary keys, example:`obj.text` instead of `obj["text"]`
+
     user_message: str = cat.working_memory.user_message_json.text
 
     if not user_message.startswith("@scrapycat"):
         return fast_reply
 
-    if user_message == "@scrapycat crawl4ai-setup":
-        result = run_crawl4ai_setup()
-        fast_reply["output"] = result
-        return fast_reply
+    # Handle crawl4ai setup command
+    if user_message.strip() == "@scrapycat crawl4ai-setup":
+        result: str = run_crawl4ai_setup()
+        return {"output": result}
 
-    settings = cat.mad_hatter.get_plugin().load_settings()
-
-    # Initialize context for this run
-    ctx = ScrapyCatContext()
-    ctx.ingest_pdf = settings["ingest_pdf"]
-    ctx.skip_get_params = settings["skip_get_params"]
-    ctx.max_depth = settings["max_depth"]
-    ctx.use_crawl4ai = settings["use_crawl4ai"]
-    ctx.allowed_extra_roots = {
-        clean_url(url)
-        for url in settings["allowed_extra_roots"].split(",")
-        if validate_url(url.strip())
-    }
-    ctx.max_pages = settings["max_pages"]
-
-    full_url = clean_url(user_message.split(" ")[1])
-
-    # Extract base path from URL if present
-    parsed_url = urllib.parse.urlparse(full_url)
-    ctx.base_path = parsed_url.path
-
-    # Set root_url to just the scheme and netloc (domain)
-    ctx.root_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-
-    # Start crawling from the root URL
-    crawler(ctx, full_url)
-    successful_imports = 0
-
-    log.info("Totale links interni trovati: " + str(len(ctx.internal_links)))
-    # Ingest all found internal links
-    for link in ctx.internal_links:
-        try:
-            if ctx.use_crawl4ai:
-                # Use crawl4ai for fetching and processing the page
-                markdown_content = asyncio.run(crawl4i(link))
-                output_file = "ocrcontent.md"
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(markdown_content)
-                metadata = {"url": link, "source": link}
-                cat.rabbit_hole.ingest_file(cat, output_file, 1024, 256, metadata)
-                os.remove(output_file)
-            else:
-                # Use default ingestion method
-                cat.rabbit_hole.ingest_file(cat, link, 400, 100)
-            successful_imports += 1
-        except Exception as e:
-            log.error(f"Error ingesting {link}: {str(e)}")
-    response: str = (
-        f"{successful_imports} of {len(ctx.internal_links)} URLs successfully imported in rabbit hole!"
-    )
-
-    return {"output": response}
-
-
-def validate_url(url: str) -> bool:
-    # Check if the URL is valid, allowing for subdomains (e.g., https://sub.domain.com)
-    regex = re.compile(
-        r"^(https?://)?([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$", re.IGNORECASE
-    )
-    return re.match(regex, url) is not None
-
-
-def crawler(ctx: ScrapyCatContext, start_url: str) -> None:
-    """
-    Crawls a webpage to find its internal/external linked URLs using BFS.
-    - Only internal links are followed.
-    - Skips images, archives, and optionally GET params.
-    - Handles PDFs based on settings.
-    - Respects max_depth:
-        - max_depth == -1: unlimited crawling (default behavior)
-        - max_depth == 0: only analyze the starting link
-        - max_depth > 0: crawl up to max_depth levels
-    """
-
-    ctx.queue = Queue()
-    ctx.queue.put((start_url, 0))  # (url, depth)
-    while not ctx.queue.empty():
-        page, depth = ctx.queue.get()
-        # Check max_pages limit before processing next page
-        if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
-            log.warning(f"Reached max_pages limit of {ctx.max_pages}. Stopping crawl.")
-            break
-
-        # Handle max_depth logic
-        # -1: unlimited, 0: only starting link, >0: up to max_depth
-        if ctx.max_depth != -1 and depth > ctx.max_depth:
-            continue
-
-        if page in ctx.visited_pages:
-            continue
-
-        ctx.visited_pages.add(page)
-
-        try:
-            # Only crawl internal pages (relative or under root_url)
-            if page.startswith("/") or page.startswith(f"{ctx.root_url}"):
-                log.warning("Crawling page: " + page)
-                # The current page is included in internal_links
-                ctx.internal_links.add(page)
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
-                }
-                response = requests.get(page, headers=headers).text
-                soup = BeautifulSoup(response, "html.parser")
-                urls = [link["href"] for link in soup.select("a[href]")]
-
-                for url in urls:
-                    if "#" in url:
-                        # Skip anchor links
-                        continue
-
-                    # Handle absolute vs relative URLs correctly
-                    if url.startswith(("http://", "https://")):
-                        # URL is already absolute, use it as-is
-                        new_url = url
-                    else:
-                        # URL is relative, join with current page
-                        new_url = urllib.parse.urljoin(page, url)
-
-                    # Extract root URL from new_url for O(1) check
-                    parsed_new_url = urllib.parse.urlparse(new_url)
-                    new_url_root = f"{parsed_new_url.scheme}://{parsed_new_url.netloc}"
-
-                    # Check if URL is internal (starts with root_url) or allowed (root is in allowed_extra_roots)
-                    if (
-                        new_url_root != ctx.root_url
-                        and new_url_root not in ctx.allowed_extra_roots
-                    ):
-                        log.warning(
-                            f"Skipping external link: {new_url} because root {new_url_root} is not in allowed roots"
-                        )
-                        continue
-
-                    # Check if URL matches the base path filter (if set)
-                    if ctx.base_path and not new_url.replace(
-                        ctx.root_url, ""
-                    ).startswith(ctx.base_path):
-                        continue
-
-                    # Skip URLs with GET parameters if the setting is enabled
-                    if ctx.skip_get_params and "?" in new_url:
-                        continue
-
-                    # Skip image URLs and zip files
-                    if new_url.lower().endswith(
-                        (
-                            ".jpg",
-                            ".jpeg",
-                            ".png",
-                            ".gif",
-                            ".bmp",
-                            ".svg",
-                            ".webp",
-                            ".ico",
-                            ".zip",
-                        )
-                    ):
-                        continue
-
-                    # Handle PDFs based on settings
-                    if new_url.endswith(".pdf"):
-                        if ctx.ingest_pdf:
-                            ctx.internal_links.add(new_url)
-                        continue
-
-                    # Decides whether to include this URL in internal_links / queue
-                    next_depth = depth + 1
-                    # If max_depth is set and the next depth would exceed it, we don't add it
-                    # We directly compare next_depth > max_depth (without +1)
-                    if ctx.max_depth != -1 and next_depth > ctx.max_depth:
-                        # We don't add it to internal_links or the queue
-                        continue
-
-                    # Add to internal links set
-                    ctx.internal_links.add(new_url)
-                    # Add to queue for crawling if not yet visited
-                    if new_url not in ctx.visited_pages:
-                        ctx.queue.put((new_url, next_depth))
-        except Exception as e:
-            log.warning(f"Error crawling {page}: {e}")
-
-
-async def crawl4i(url: str) -> str:
-    if not url.endswith(".pdf"):
-        async with AsyncWebCrawler() as mdcrawler:
-            config = CrawlerRunConfig(
-                excluded_tags=["form", "header", "footer", "nav"],
-                exclude_social_media_links=True,
-                exclude_external_images=True,
-                remove_overlay_elements=True,
-            )
-            md_generator = DefaultMarkdownGenerator(
-                options={"ignore_links": True, "ignore_images": True}
-            )
-            config.markdown_generator = md_generator
-            result = await mdcrawler.arun(url, config=config)
-            return result.markdown
-    else:
-        pdf_crawler_strategy = PDFCrawlerStrategy()
-        async with AsyncWebCrawler(crawler_strategy=pdf_crawler_strategy) as pdfcrawler:
-            pdf_scraping_strategy = PDFContentScrapingStrategy()
-            run_config = CrawlerRunConfig(scraping_strategy=pdf_scraping_strategy)
-            result = await pdfcrawler.arun(url=url, config=run_config)
-            if result.markdown and hasattr(result.markdown, "raw_markdown"):
-                return result.markdown.raw_markdown
+    # Process the scrapycat command using the extracted function
+    result = process_scrapycat_command(user_message, cat)
+    return {"output": result}
