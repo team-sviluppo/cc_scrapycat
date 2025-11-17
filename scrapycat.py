@@ -54,6 +54,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
 
     # Initialize context for this run
     ctx: ScrapyCatContext = ScrapyCatContext()
+    ctx.command = user_message  # Store the command that triggered this session
     ctx.ingest_pdf = settings.get("ingest_pdf", False)
     ctx.skip_get_params = settings.get("skip_get_params", False)
     ctx.max_depth = settings.get("max_depth", -1)
@@ -107,10 +108,41 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     if ctx.root_domains:
         log.info(f"Recursive domains configured: {len(ctx.root_domains)} domains")
 
+    # Fire before_scrape hook with serializable context data
+    try:
+        # Create completely independent data structure to avoid any lock references
+        context_data = {
+            "session_id": str(ctx.session_id),  # Ensure it's a string
+            "command": str(ctx.command),        # Ensure it's a string
+            "scraped_pages": [],  # Empty at start
+            "failed_pages": [],   # Empty at start
+            "chunk_size": int(ctx.chunk_size),
+            "chunk_overlap": int(ctx.chunk_overlap)
+        }
+        cat.mad_hatter.execute_hook("scrapycat_before_scrape", context_data, cat=cat)
+    except Exception as hook_error:
+        log.warning(f"Error executing before_scrape hook: {hook_error}")
+
     # Start crawling from all starting URLs
     try:
         crawler(ctx, cat, starting_urls)
         log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
+        
+        # Fire after_crawl hook with serializable context data
+        try:
+            # Create completely independent data structure to avoid any lock references
+            context_data = {
+                "session_id": str(ctx.session_id),  # Ensure it's a string
+                "command": str(ctx.command),        # Ensure it's a string
+                "scraped_pages": [str(url) for url in ctx.scraped_pages],  # Create new list with string copies
+                "failed_pages": [],  # No failures yet during crawling
+                "chunk_size": int(ctx.chunk_size),
+                "chunk_overlap": int(ctx.chunk_overlap)
+            }
+            log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
+        except Exception as hook_error:
+            log.warning(f"Error executing after_crawl hook: {hook_error}")
         
         # Sequential ingestion after parallel scraping is complete
         if not ctx.scraped_pages:
@@ -127,18 +159,35 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
                         output_file: str = "temp_crawl4ai_content.md"
                         with open(output_file, "w", encoding="utf-8") as f:
                             f.write(markdown_content)
-                        metadata: Dict[str, str] = {"url": scraped_url, "source": scraped_url}
+                        metadata: Dict[str, str] = {
+                            "url": scraped_url, 
+                            "source": scraped_url,
+                            "session_id": ctx.session_id,
+                            "command": ctx.command
+                        }
                         cat.rabbit_hole.ingest_file(cat, output_file, ctx.chunk_size, ctx.chunk_overlap, metadata)
                         os.remove(output_file)
                         ingested_count += 1
                     except Exception as crawl4ai_error:
                         log.warning(f"crawl4ai failed for {scraped_url}, falling back to default method: {str(crawl4ai_error)}")
                         # Fallback to default method
-                        cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap)
+                        metadata: Dict[str, str] = {
+                            "url": scraped_url,
+                            "source": scraped_url, 
+                            "session_id": ctx.session_id,
+                            "command": ctx.command
+                        }
+                        cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap, metadata)
                         ingested_count += 1
                 else:
                     # Use default ingestion method
-                    cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap)
+                    metadata: Dict[str, str] = {
+                        "url": scraped_url,
+                        "source": scraped_url,
+                        "session_id": ctx.session_id,
+                        "command": ctx.command
+                    }
+                    cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap, metadata)
                     ingested_count += 1
                 
                 # Send progress update
@@ -146,6 +195,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
                 
             except Exception as e:
                 failed_count += 1
+                ctx.failed_pages.append(scraped_url)  # Track failed pages in context
                 log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
                 # Continue with next page even if one fails
         
@@ -156,6 +206,23 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
         log.error(f"ScrapyCat operation failed: {str(e)}")
         response = f"ScrapyCat failed: {str(e)}"
     finally:
+        # Fire after_scrape hook with serializable context data
+        try:
+            # Create completely independent data structure to avoid any lock references
+            context_data = {
+                "session_id": str(ctx.session_id),  # Ensure it's a string
+                "command": str(ctx.command),        # Ensure it's a string
+                "scraped_pages": [str(url) for url in ctx.scraped_pages],  # Create new list with string copies
+                "failed_pages": [str(url) for url in ctx.failed_pages],    # Create new list with string copies
+                "chunk_size": int(ctx.chunk_size),
+                "chunk_overlap": int(ctx.chunk_overlap)
+            }
+            log.debug(f"Firing after_scrape hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            cat.mad_hatter.execute_hook("scrapycat_after_scrape", context_data, cat=cat)
+        except Exception as hook_error:
+            log.warning(f"Error executing after_scrape hook: {hook_error}")
+        
+        # Always close the session
         ctx.session.close()
 
     return response

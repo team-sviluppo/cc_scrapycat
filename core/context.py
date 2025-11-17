@@ -2,6 +2,7 @@ from typing import Dict, Set, List, Optional
 from threading import Lock
 import requests
 from urllib.robotparser import RobotFileParser
+import uuid
 
 
 class ScrapyCatContext:
@@ -29,3 +30,8 @@ class ScrapyCatContext:
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages
+        
+        # Session tracking fields for coordination with other plugins
+        self.session_id: str = str(uuid.uuid4())  # Unique identifier for this scraping session
+        self.command: str = ""  # The command that triggered this scraping session
+        self.failed_pages: List[str] = []  # URLs that failed during ingestion
