@@ -250,3 +250,19 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     # Process the scrapycat command using the extracted function
     result = process_scrapycat_command(user_message, cat)
     return {"output": result}
+
+
+# Empty hook placeholders so other plugins can attach behavior to these events.
+# They simply pass the context through unchanged.
+
+@hook()
+def scrapycat_before_scrape(context: Dict[str, Any], cat: StrayCat):
+    return 
+
+@hook()
+def scrapycat_after_crawl(context: Dict[str, Any], cat: StrayCat):
+    return
+
+@hook()
+def scrapycat_after_scrape(context: Dict[str, Any], cat: StrayCat):
+    return
