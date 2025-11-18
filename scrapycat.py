@@ -5,6 +5,7 @@ from cat.looking_glass.stray_cat import StrayCat
 import os
 import asyncio
 import urllib.parse
+import time
 
 from .core.context import ScrapyCatContext
 from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -125,6 +126,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
 
     # Start crawling from all starting URLs
     try:
+        # Record start time for the whole crawling+ingestion operation
+        start_time = time.time()
         crawler(ctx, cat, starting_urls)
         log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
         
@@ -200,7 +203,10 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
                 # Continue with next page even if one fails
         
         log.info(f"Ingestion completed: {ingested_count} successful, {failed_count} failed")
-        response: str = f"{ingested_count} URLs successfully imported, {failed_count} failed"
+        # Compute elapsed time in minutes (rounded to 2 decimal places)
+        elapsed_seconds = time.time() - start_time
+        minutes = round(elapsed_seconds / 60.0, 2)
+        response: str = f"{ingested_count} URLs successfully imported, {failed_count} failed in {minutes} minutes"
 
     except Exception as e:
         log.error(f"ScrapyCat operation failed: {str(e)}")
