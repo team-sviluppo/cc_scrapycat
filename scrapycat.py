@@ -111,16 +111,9 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
 
     # Fire before_scrape hook with serializable context data
     try:
-        # Create completely independent data structure to avoid any lock references
-        context_data = {
-            "session_id": str(ctx.session_id),  # Ensure it's a string
-            "command": str(ctx.command),        # Ensure it's a string
-            "scraped_pages": [],  # Empty at start
-            "failed_pages": [],   # Empty at start
-            "chunk_size": int(ctx.chunk_size),
-            "chunk_overlap": int(ctx.chunk_overlap)
-        }
-        cat.mad_hatter.execute_hook("scrapycat_before_scrape", context_data, cat=cat)
+        context_data = ctx.to_hook_context()
+        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scrape", context_data, cat=cat)
+        ctx.update_from_hook_context(context_data)
     except Exception as hook_error:
         log.warning(f"Error executing before_scrape hook: {hook_error}")
 
@@ -133,15 +126,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
         
         # Fire after_crawl hook with serializable context data
         try:
-            # Create completely independent data structure to avoid any lock references
-            context_data = {
-                "session_id": str(ctx.session_id),  # Ensure it's a string
-                "command": str(ctx.command),        # Ensure it's a string
-                "scraped_pages": [str(url) for url in ctx.scraped_pages],  # Create new list with string copies
-                "failed_pages": [],  # No failures yet during crawling
-                "chunk_size": int(ctx.chunk_size),
-                "chunk_overlap": int(ctx.chunk_overlap)
-            }
+            context_data = ctx.to_hook_context()
             log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
             cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
         except Exception as hook_error:
@@ -214,17 +199,10 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     finally:
         # Fire after_scrape hook with serializable context data
         try:
-            # Create completely independent data structure to avoid any lock references
-            context_data = {
-                "session_id": str(ctx.session_id),  # Ensure it's a string
-                "command": str(ctx.command),        # Ensure it's a string
-                "scraped_pages": [str(url) for url in ctx.scraped_pages],  # Create new list with string copies
-                "failed_pages": [str(url) for url in ctx.failed_pages],    # Create new list with string copies
-                "chunk_size": int(ctx.chunk_size),
-                "chunk_overlap": int(ctx.chunk_overlap)
-            }
+            context_data = ctx.to_hook_context()
             log.debug(f"Firing after_scrape hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
             cat.mad_hatter.execute_hook("scrapycat_after_scrape", context_data, cat=cat)
+            ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_scrape hook: {hook_error}")
         
@@ -252,17 +230,16 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     return {"output": result}
 
 
-# Empty hook placeholders so other plugins can attach behavior to these events.
-# They simply pass the context through unchanged.
+# Empty hook placeholders to skip the warning about missing hooks
 
 @hook()
 def scrapycat_before_scrape(context: Dict[str, Any], cat: StrayCat):
-    return 
+    return context
 
 @hook()
 def scrapycat_after_crawl(context: Dict[str, Any], cat: StrayCat):
-    return
+    return context
 
 @hook()
 def scrapycat_after_scrape(context: Dict[str, Any], cat: StrayCat):
-    return
+    return context
