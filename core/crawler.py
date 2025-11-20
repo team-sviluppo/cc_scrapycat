@@ -87,6 +87,7 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                 ".ico",
                 ".zip",
                 ".ods",
+                ".odt",
                 ".xls",
                 ".p7m",
                 ".rar",

@@ -137,7 +137,6 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
             return "No pages were successfully scraped"
         
         ingested_count: int = 0
-        failed_count: int = 0
         for i, scraped_url in enumerate(ctx.scraped_pages):
             try:
                 if ctx.use_crawl4ai and CRAWL4AI_AVAILABLE:
@@ -182,16 +181,15 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
                 cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
                 
             except Exception as e:
-                failed_count += 1
                 ctx.failed_pages.append(scraped_url)  # Track failed pages in context
                 log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
                 # Continue with next page even if one fails
         
-        log.info(f"Ingestion completed: {ingested_count} successful, {failed_count} failed")
+        log.info(f"Ingestion completed: {ingested_count} successful, {len(ctx.failed_pages)} failed")
         # Compute elapsed time in minutes (rounded to 2 decimal places)
         elapsed_seconds = time.time() - start_time
         minutes = round(elapsed_seconds / 60.0, 2)
-        response: str = f"{ingested_count} URLs successfully imported, {failed_count} failed in {minutes} minutes"
+        response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed in {minutes} minutes"
 
     except Exception as e:
         log.error(f"ScrapyCat operation failed: {str(e)}")
