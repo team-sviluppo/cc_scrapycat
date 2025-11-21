@@ -14,7 +14,7 @@ from .integrations.crawl4ai import run_crawl4ai_setup, crawl4i, CRAWL4AI_AVAILAB
 from .core.crawler import crawler
 
 
-def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
+def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool = False) -> str:
     """Process a scrapycat command and return the result message"""
     
     settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
@@ -56,6 +56,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
     # Initialize context for this run
     ctx: ScrapyCatContext = ScrapyCatContext()
     ctx.command = user_message  # Store the command that triggered this session
+    ctx.scheduled = scheduled  # Mark if this is a scheduled run
     ctx.ingest_pdf = settings.get("ingest_pdf", False)
     ctx.skip_get_params = settings.get("skip_get_params", False)
     ctx.max_depth = settings.get("max_depth", -1)
@@ -178,7 +179,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat) -> str:
                     ingested_count += 1
                 
                 # Send progress update
-                cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
+                if not ctx.scheduled:
+                    cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
                 
             except Exception as e:
                 ctx.failed_pages.append(scraped_url)  # Track failed pages in context

@@ -29,9 +29,10 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
         # Store scraped page for later sequential ingestion
         with ctx.scraped_pages_lock:
             ctx.scraped_pages.append(page)
-            # Send progress update for scraping
-            current_count: int = len(ctx.scraped_pages)
-            cat.send_ws_message(f"Scraped {current_count} pages - Currently scraping: {page}")
+            # Send progress update for scraping (only if not scheduled)
+            if not ctx.scheduled:
+                current_count: int = len(ctx.scraped_pages)
+                cat.send_ws_message(f"Scraped {current_count} pages - Currently scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
 
