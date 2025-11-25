@@ -9,7 +9,7 @@
     "chunk_overlap": 256,
     "use_crawl4ai": false,
     "scheduled_command": "@scrapycat https://www.comune.bugliano.pi.it/",
-    "schedule_hour": 15,
-    "schedule_minute": 52,
+    "schedule_hour": 16,
+    "schedule_minute": 58,
     "follow_robots_txt": false
 }

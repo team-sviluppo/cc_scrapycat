@@ -73,3 +73,59 @@ First-time setup for Crawl4AI:
 ```
 
 Installs required packages. Wait for the "Crawl4AI setup completed successfully." message.
+
+# Hooks
+
+The plugin provides three hooks that allow other plugins to interact with the scraping process:
+
+## scrapycat_before_scrape
+Executed before the scraping process begins.
+
+**Parameters:**
+- `context` (Dict[str, Any]): Contains session information including:
+  - `session_id` (str): Unique identifier for the scraping session
+  - `command` (str): The original command that triggered the scraping
+  - `scheduled` (bool): Whether this is a scheduled run (prevents websocket messages)
+  - `scraped_pages` (List[str]): List of successfully scraped page URLs (initially empty)
+  - `failed_pages` (List[str]): List of URLs that failed to scrape (initially empty)
+  - `chunk_size` (int): Size of content chunks for ingestion
+  - `chunk_overlap` (int): Overlap between consecutive chunks
+- `cat` (StrayCat): The cat instance
+
+**Usage:** Allows preprocessing or validation before scraping starts.
+
+## scrapycat_after_crawl
+Executed after the crawling phase is complete but before ingestion begins.
+
+**Parameters:**
+- `context` (Dict[str, Any]): Contains updated session information including:
+  - `session_id` (str): Unique identifier for the scraping session
+  - `command` (str): The original command that triggered the scraping
+  - `scheduled` (bool): Whether this is a scheduled run (prevents websocket messages)
+  - `scraped_pages` (List[str]): List of successfully scraped page URLs (populated after crawling)
+  - `failed_pages` (List[str]): List of URLs that failed to scrape (populated if any failures occurred)
+  - `chunk_size` (int): Size of content chunks for ingestion
+  - `chunk_overlap` (int): Overlap between consecutive chunks
+- `cat` (StrayCat): The cat instance
+
+**Usage:** Allows processing of the crawled URLs list or cleanup operations before ingestion.
+
+## scrapycat_after_scrape
+Executed after the entire scraping and ingestion process is complete.
+
+**Parameters:**
+- `context` (Dict[str, Any]): Contains final session information including:
+  - `session_id` (str): Unique identifier for the scraping session
+  - `command` (str): The original command that triggered the scraping
+  - `scheduled` (bool): Whether this is a scheduled run (prevents websocket messages)
+  - `scraped_pages` (List[str]): List of successfully scraped page URLs (final list)
+  - `failed_pages` (List[str]): List of URLs that failed to scrape (final list)
+  - `chunk_size` (int): Size of content chunks for ingestion
+  - `chunk_overlap` (int): Overlap between consecutive chunks
+- `cat` (StrayCat): The cat instance
+
+**Usage:** Allows post-processing, cleanup, or notification operations after scraping completion.
+
+## Scheduled Parameter
+
+The plugin includes a `scheduled` parameter in the processing function that prevents websocket errors when running automated scheduled jobs. When `scheduled=True`, progress messages are not sent via websocket to avoid logging errors during unattended operations.
