@@ -4,13 +4,14 @@ from typing import Dict, Optional, Any, List
 from cat.log import log
 from cat.mad_hatter.decorators import hook, plugin
 from cat.looking_glass.stray_cat import StrayCat
+from cat.auth.permissions import AuthUserInfo
 
 
-def setup_scrapycat_schedule(cat: StrayCat, settings: Optional[Dict[str, Any]] = None) -> None:
+def setup_scrapycat_schedule(cheshire_cat, settings: Optional[Dict[str, Any]] = None) -> None:
     """Setup or update the ScrapyCat scheduled job based on settings"""
     try:
         if settings is None:
-            settings = cat.mad_hatter.get_plugin().load_settings()
+            settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
             
         scheduled_command: str = settings.get("scheduled_command", "").strip()
         schedule_hour: int = settings.get("schedule_hour", 3)
@@ -21,7 +22,7 @@ def setup_scrapycat_schedule(cat: StrayCat, settings: Optional[Dict[str, Any]] =
         
         # Always try to remove any existing job first
         try:
-            cat.white_rabbit.scheduler.remove_job(job_id)
+            cheshire_cat.white_rabbit.scheduler.remove_job(job_id)
             log.info(f"Removed existing scheduled ScrapyCat job: {job_id}")
         except Exception:
             pass  # Job doesn't exist, which is fine
@@ -48,14 +49,32 @@ def setup_scrapycat_schedule(cat: StrayCat, settings: Optional[Dict[str, Any]] =
         # Import process_scrapycat_command from the main module
         from .scrapycat import process_scrapycat_command
         
-        # Schedule the new job: call process_scrapycat_command directly
-        cat.white_rabbit.schedule_cron_job(
-            job=process_scrapycat_command,
+        # Create wrapper function for scheduled execution
+        def scheduled_scrapycat_job(user_message: str, cat) -> str:
+            """Wrapper function for scheduled ScrapyCat execution"""
+            # Create a proper StrayCat instance for the scheduled job
+            # Use a system user for scheduled operations
+            system_user = AuthUserInfo(
+                id="system",
+                name="system"
+            )
+            stray_cat = StrayCat(system_user)
+            
+            try:
+                return process_scrapycat_command(user_message, stray_cat, scheduled=True)
+            finally:
+                # Clean up the working memory cache after the job completes
+                stray_cat.update_working_memory_cache()
+                del stray_cat
+        
+        # Schedule the new job: call the wrapper function
+        cheshire_cat.white_rabbit.schedule_cron_job(
+            job=scheduled_scrapycat_job,
             job_id=job_id,
             hour=schedule_hour,
             minute=schedule_minute,
             user_message=scheduled_command,
-            cat=cat
+            cat=None  # The wrapper function will create its own StrayCat
         )
         
         # Get current time for comparison
@@ -68,18 +87,18 @@ def setup_scrapycat_schedule(cat: StrayCat, settings: Optional[Dict[str, Any]] =
         
         # Debug: Check scheduler status and all jobs
         try:
-            scheduler_running: bool = cat.white_rabbit.scheduler.running
+            scheduler_running: bool = cheshire_cat.white_rabbit.scheduler.running
             log.info(f"White Rabbit scheduler running: {scheduler_running}")
             
             if not scheduler_running:
                 log.warning("White Rabbit scheduler is not running! This may be why jobs don't execute.")
             
             # Get all jobs
-            all_jobs: List[Any] = cat.white_rabbit.get_jobs()
+            all_jobs: List[Any] = cheshire_cat.white_rabbit.get_jobs()
             log.info(f"Total scheduled jobs: {len(all_jobs)}")
             
             # Check our specific job
-            job: Optional[Dict[str, Any]] = cat.white_rabbit.get_job(job_id)
+            job: Optional[Dict[str, Any]] = cheshire_cat.white_rabbit.get_job(job_id)
             if job:
                 log.info(f"Job successfully added to scheduler: {job}")
                 # Log next run time - job is a dictionary, not an object
@@ -140,9 +159,10 @@ def save_plugin_settings_to_file(settings: Dict[str, Any], plugin_path: str) -> 
 
 
 @hook()
-def after_cat_bootstrap(cat: StrayCat) -> None:
+def after_cat_bootstrap(cat) -> None:
     """Hook called at Cat startup to schedule recurring jobs"""
     log.info("Setting up ScrapyCat scheduled jobs after Cat bootstrap")
+    # The cat parameter here is CheshireCat during bootstrap
     setup_scrapycat_schedule(cat)
 
 
@@ -152,12 +172,12 @@ def save_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
     log.info(f"ScrapyCat settings saved, updating schedule")
     
     try:
-        # Get the cat instance from CheshireCat singleton
+        # Get the CheshireCat instance for scheduling capabilities
         from cat.looking_glass.cheshire_cat import CheshireCat
-        cat: CheshireCat = CheshireCat()
+        cheshire_cat: CheshireCat = CheshireCat()
         
         # Update the schedule with new settings
-        setup_scrapycat_schedule(cat, settings)
+        setup_scrapycat_schedule(cheshire_cat, settings)
         log.info("ScrapyCat schedule updated successfully")
             
     except Exception as e:

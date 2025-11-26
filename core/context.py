@@ -2,6 +2,7 @@ from typing import Dict, Set, List, Optional
 from threading import Lock
 import requests
 from urllib.robotparser import RobotFileParser
+import uuid
 
 
 class ScrapyCatContext:
@@ -29,3 +30,31 @@ class ScrapyCatContext:
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages
+        
+        # Session tracking fields for coordination with other plugins
+        self.session_id: str = str(uuid.uuid4())  # Unique identifier for this scraping session
+        self.command: str = ""  # The command that triggered this scraping session
+        self.scheduled: bool = False  # Whether this command is running from scheduler (True) or chat (False)
+        self.failed_pages: List[str] = []  # URLs that failed during ingestion
+    
+    def to_hook_context(self) -> Dict[str, any]:
+        """Create a serializable context data dictionary for hook execution"""
+        return {
+            "session_id": str(self.session_id),
+            "command": str(self.command),
+            "scheduled": bool(self.scheduled),
+            "scraped_pages": [str(url) for url in self.scraped_pages],
+            "failed_pages": [str(url) for url in self.failed_pages],
+            "chunk_size": int(self.chunk_size),
+            "chunk_overlap": int(self.chunk_overlap)
+        }
+    
+    def update_from_hook_context(self, context_data: Dict[str, any]) -> None:
+        """Update context with data returned from hook execution"""
+        self.session_id = context_data.get("session_id", self.session_id)
+        self.command = context_data.get("command", self.command)
+        self.scheduled = context_data.get("scheduled", self.scheduled)
+        self.scraped_pages = context_data.get("scraped_pages", self.scraped_pages)
+        self.failed_pages = context_data.get("failed_pages", self.failed_pages)
+        self.chunk_size = context_data.get("chunk_size", self.chunk_size)
+        self.chunk_overlap = context_data.get("chunk_overlap", self.chunk_overlap)
