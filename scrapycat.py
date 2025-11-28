@@ -81,7 +81,10 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.max_workers = settings.get("max_workers", 1)  # Default to 1 if not set
     ctx.chunk_size = settings.get("chunk_size", 512)  # Default to 512 if not set
     ctx.chunk_overlap = settings.get("chunk_overlap", 128)  # Default to 128 if not set
-
+    
+    # Parse skip extensions from settings
+    skip_extensions_str = settings.get("skip_extensions", ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc")
+    ctx.skip_extensions = [ext.strip() for ext in skip_extensions_str.split(",") if ext.strip()]
     # Check if crawl4ai is requested but not available
     if ctx.use_crawl4ai and not CRAWL4AI_AVAILABLE:
         log.warning("crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling.")

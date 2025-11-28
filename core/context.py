@@ -20,6 +20,7 @@ class ScrapyCatContext:
         self.robots_cache: Dict[str, Optional[RobotFileParser]] = {}  # Cache robots.txt parsers by domain
         self.visited_lock: Lock = Lock()  # Thread-safe access to visited_pages
         self.max_workers: int = 1   # Configurable thread pool size
+        self.skip_extensions: List[str] = []  # List of file extensions to skip during crawling
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
         # Session reuse for better performance
@@ -46,7 +47,8 @@ class ScrapyCatContext:
             "scraped_pages": [str(url) for url in self.scraped_pages],
             "failed_pages": [str(url) for url in self.failed_pages],
             "chunk_size": int(self.chunk_size),
-            "chunk_overlap": int(self.chunk_overlap)
+            "chunk_overlap": int(self.chunk_overlap),
+            "skip_extensions": [str(ext) for ext in self.skip_extensions]
         }
     
     def update_from_hook_context(self, context_data: Dict[str, any]) -> None:
@@ -58,3 +60,4 @@ class ScrapyCatContext:
         self.failed_pages = context_data.get("failed_pages", self.failed_pages)
         self.chunk_size = context_data.get("chunk_size", self.chunk_size)
         self.chunk_overlap = context_data.get("chunk_overlap", self.chunk_overlap)
+        self.skip_extensions = context_data.get("skip_extensions", self.skip_extensions)

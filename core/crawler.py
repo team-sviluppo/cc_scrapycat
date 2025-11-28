@@ -77,31 +77,9 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
             # Skip URLs with GET parameters if the setting is enabled
             if ctx.skip_get_params and "?" in new_url:
                 continue
-            skip_endswith: Tuple[str, ...] = (
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".gif",
-                ".bmp",
-                ".svg",
-                ".webp",
-                ".ico",
-                ".zip",
-                ".ods",
-                ".odt",
-                ".xls",
-                ".p7m",
-                ".rar",
-                ".mp3",
-                ".xml",
-                ".7z",
-                ".exe",
-            )
 
-            # Skip image URLs and zip files
-            if new_url.lower().endswith(
-                skip_endswith
-            ):
+            # Skip URLs with configured file extensions
+            if ctx.skip_extensions and new_url.lower().endswith(tuple(ctx.skip_extensions)):
                 continue
 
             # Handle PDFs based on settings

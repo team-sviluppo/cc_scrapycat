@@ -69,6 +69,11 @@ class PluginSettings(BaseModel):
         title="Schedule minute",
         description="Minute of the hour to run the scheduled command (0-59)",
     )
+    skip_extensions: str = Field(
+        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc",
+        title="File extensions to skip",
+        description="Comma-separated list of file extensions to skip during crawling (e.g., '.jpg,.png,.zip')"
+    )
 
     @validator('schedule_hour')
     def validate_schedule_hour(cls, v):
