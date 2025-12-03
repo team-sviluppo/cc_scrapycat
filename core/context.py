@@ -23,6 +23,7 @@ class ScrapyCatContext:
         self.skip_extensions: List[str] = []  # List of file extensions to skip during crawling
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
+        self.page_timeout: int = 30  # Timeout for page loading operations
         # Session reuse for better performance
         self.session: requests.Session = requests.Session()  # Reuse connections
         self.session.headers.update({
@@ -48,6 +49,7 @@ class ScrapyCatContext:
             "failed_pages": [str(url) for url in self.failed_pages],
             "chunk_size": int(self.chunk_size),
             "chunk_overlap": int(self.chunk_overlap),
+            "page_timeout": int(self.page_timeout),
             "skip_extensions": [str(ext) for ext in self.skip_extensions]
         }
     
@@ -60,4 +62,5 @@ class ScrapyCatContext:
         self.failed_pages = context_data.get("failed_pages", self.failed_pages)
         self.chunk_size = context_data.get("chunk_size", self.chunk_size)
         self.chunk_overlap = context_data.get("chunk_overlap", self.chunk_overlap)
+        self.page_timeout = context_data.get("page_timeout", self.page_timeout)
         self.skip_extensions = context_data.get("skip_extensions", self.skip_extensions)

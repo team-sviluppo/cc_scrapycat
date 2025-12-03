@@ -81,6 +81,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.max_workers = settings.get("max_workers", 1)  # Default to 1 if not set
     ctx.chunk_size = settings.get("chunk_size", 512)  # Default to 512 if not set
     ctx.chunk_overlap = settings.get("chunk_overlap", 128)  # Default to 128 if not set
+    ctx.page_timeout = settings.get("page_timeout", 30)  # Default to 30 seconds if not set
     
     # Parse skip extensions from settings
     skip_extensions_str = settings.get("skip_extensions", ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc")
@@ -197,8 +198,14 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed in {minutes} minutes"
 
     except Exception as e:
-        log.error(f"ScrapyCat operation failed: {str(e)}")
-        response = f"ScrapyCat failed: {str(e)}"
+        error_msg = str(e)
+        # Provide better context for timeout errors
+        if "TimeoutError" in error_msg or "futures unfinished" in error_msg:
+            log.error(f"ScrapyCat timeout - some pages took longer than {ctx.page_timeout} seconds to load: {error_msg}")
+            response = f"ScrapyCat completed with timeouts - some pages took longer than {ctx.page_timeout} seconds to load. Consider increasing the 'Page load timeout' setting."
+        else:
+            log.error(f"ScrapyCat operation failed: {error_msg}")
+            response = f"ScrapyCat failed: {error_msg}"
     finally:
         # Fire after_scrape hook with serializable context data
         try:

@@ -137,35 +137,27 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
             future_to_url[future] = (start_url, 0)
         
         while future_to_url:
-            # Check max_pages limit
+            # Check max_pages limit before processing more futures
             with ctx.visited_lock:
                 if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
                     log.info(f"Max pages limit reached: {ctx.max_pages} pages")
+                    # Cancel remaining futures
+                    for remaining_future in future_to_url.keys():
+                        remaining_future.cancel()
                     break
             
-            # Process completed futures with timeout
-            completed_futures: List[Any] = []
+            # Process completed futures - use a reasonable timeout but don't break early
             try:
-                for future in as_completed(future_to_url, timeout=10):
-                    completed_futures.append(future)
-                    break  # Process one at a time to check limits frequently
-            except TimeoutError:
-                # If timeout occurs, continue to check for any completed futures
-                for future in list(future_to_url.keys()):
-                    if future.done():
-                        completed_futures.append(future)
+                # Wait for at least one future to complete, with a reasonable timeout
+                completed_future = next(as_completed(future_to_url, timeout=ctx.page_timeout))
                 
-                # If no futures completed, continue waiting
-                if not completed_futures:
-                    continue
-                    
-            for future in completed_futures:
-                url, depth = future_to_url.pop(future)
+                # Process this completed future
+                url, depth = future_to_url.pop(completed_future)
                 
                 try:
-                    new_urls: List[Tuple[str, int]] = future.result()
+                    new_urls: List[Tuple[str, int]] = completed_future.result()
                     
-                    # Submit new URLs for crawling
+                    # Submit new URLs for crawling (if under limits)
                     for new_url, new_depth in new_urls:
                         # Check limits before submitting new tasks
                         with ctx.visited_lock:
@@ -178,3 +170,29 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                             
                 except Exception as e:
                     log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
+                    
+            except TimeoutError:
+                # Check if any futures completed while we were waiting
+                completed_futures = [f for f in future_to_url.keys() if f.done()]
+                if completed_futures:
+                    # Process completed futures without waiting
+                    for completed_future in completed_futures:
+                        url, depth = future_to_url.pop(completed_future)
+                        try:
+                            new_urls: List[Tuple[str, int]] = completed_future.result()
+                            for new_url, new_depth in new_urls:
+                                with ctx.visited_lock:
+                                    if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
+                                        break
+                                if (ctx.max_depth == -1 or new_depth <= ctx.max_depth):
+                                    future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
+                                    future_to_url[future] = (new_url, new_depth)
+                        except Exception as e:
+                            log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
+                else:
+                    # No futures completed - this indicates genuinely slow pages
+                    log.debug(f"No pages completed within {ctx.page_timeout} seconds. Still waiting for {len(future_to_url)} pages...")
+                    # Continue waiting - don't break the loop
+            except StopIteration:
+                # No more futures to process
+                break

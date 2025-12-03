@@ -74,6 +74,18 @@ class PluginSettings(BaseModel):
         title="File extensions to skip",
         description="Comma-separated list of file extensions to skip during crawling (e.g., '.jpg,.png,.zip')"
     )
+    page_timeout: int = Field(
+        default=30,
+        title="Page load timeout (seconds)",
+        description="Maximum time to wait for a page to load before checking for other completed pages (in seconds)"
+    )
+
+    @validator('page_timeout')
+    def validate_page_timeout(cls, v):
+        """Validate that page timeout is reasonable (5-300 seconds)"""
+        if not 5 <= v <= 300:
+            raise ValueError('Page timeout must be between 5 and 300 seconds')
+        return v
 
     @validator('schedule_hour')
     def validate_schedule_hour(cls, v):
