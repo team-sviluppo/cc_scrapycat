@@ -5,6 +5,19 @@ from cat.log import log
 from ..core.context import ScrapyCatContext
 from .url_utils import normalize_domain
 
+# Import thread-local session getter
+try:
+    from ..core.crawler import get_thread_session
+except ImportError:
+    # Fallback if import fails
+    import requests
+    def get_thread_session():
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"
+        })
+        return session
+
 
 def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFileParser]:
     """
@@ -20,7 +33,9 @@ def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFilePar
         for protocol in ['https', 'http']:
             robots_url = f"{protocol}://{domain}/robots.txt"
             try:
-                response = ctx.session.get(robots_url, timeout=10)
+                # Use thread-local session instead of shared session
+                session = get_thread_session()
+                response = session.get(robots_url, timeout=10)
                 if response.status_code == 200:
                     rp = RobotFileParser()
                     rp.set_url(robots_url)
@@ -62,5 +77,6 @@ def is_url_allowed_by_robots(ctx: ScrapyCatContext, url: str) -> bool:
         return True
     
     # Check if the URL is allowed for our user agent
-    user_agent = ctx.session.headers.get('User-Agent', '*')
+    session = get_thread_session()
+    user_agent = session.headers.get('User-Agent', '*')
     return robots_parser.can_fetch(user_agent, url)

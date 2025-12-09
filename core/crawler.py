@@ -85,7 +85,12 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
             # Handle PDFs based on settings
             if new_url.lower().endswith(".pdf"):
                 if ctx.ingest_pdf:
-                    valid_urls.append(new_url)
+                    # PDFs should be added to scraped pages but not processed for URL extraction
+                    with ctx.visited_lock:
+                        if new_url not in ctx.visited_pages:
+                            ctx.visited_pages.add(new_url)
+                            with ctx.scraped_pages_lock:
+                                ctx.scraped_pages.append(new_url)
                 continue
 
             valid_urls.append(new_url)
@@ -146,32 +151,37 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                         remaining_future.cancel()
                     break
             
-            # Process completed futures - use a reasonable timeout but don't break early
+            # Process completed futures - use a shorter timeout to improve responsiveness
             try:
-                # Wait for at least one future to complete, with a reasonable timeout
-                completed_future = next(as_completed(future_to_url, timeout=ctx.page_timeout))
+                # Wait for at least one future to complete, with a shorter timeout for better parallelism
+                completed_futures = []
+                for completed_future in as_completed(future_to_url, timeout=min(5, ctx.page_timeout)):
+                    completed_futures.append(completed_future)
+                    # Break after collecting the first completed future to process it immediately
+                    break
                 
-                # Process this completed future
-                url, depth = future_to_url.pop(completed_future)
-                
-                try:
-                    new_urls: List[Tuple[str, int]] = completed_future.result()
+                # Process all completed futures
+                for completed_future in completed_futures:
+                    url, depth = future_to_url.pop(completed_future)
                     
-                    # Submit new URLs for crawling (if under limits)
-                    for new_url, new_depth in new_urls:
-                        # Check limits before submitting new tasks
-                        with ctx.visited_lock:
-                            if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
-                                break
+                    try:
+                        new_urls: List[Tuple[str, int]] = completed_future.result()
+                        
+                        # Submit new URLs for crawling (if under limits)
+                        for new_url, new_depth in new_urls:
+                            # Check limits before submitting new tasks
+                            with ctx.visited_lock:
+                                if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
+                                    break
+                                    
+                            if (ctx.max_depth == -1 or new_depth <= ctx.max_depth):
+                                future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
+                                future_to_url[future] = (new_url, new_depth)
                                 
-                        if (ctx.max_depth == -1 or new_depth <= ctx.max_depth):
-                            future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
-                            future_to_url[future] = (new_url, new_depth)
-                            
-                except Exception as e:
-                    log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
+                    except Exception as e:
+                        log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
                     
-            except TimeoutError:
+            except StopIteration:
                 # Check if any futures completed while we were waiting
                 completed_futures = [f for f in future_to_url.keys() if f.done()]
                 if completed_futures:
@@ -190,9 +200,28 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                         except Exception as e:
                             log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
                 else:
-                    # No futures completed - this indicates genuinely slow pages
-                    log.debug(f"No pages completed within {ctx.page_timeout} seconds. Still waiting for {len(future_to_url)} pages...")
+                    # No futures completed - this indicates genuinely slow pages or all are finished
+                    log.debug(f"No pages completed within timeout. Still waiting for {len(future_to_url)} pages...")
                     # Continue waiting - don't break the loop
+            except TimeoutError:
+                # Timeout occurred, but continue processing - check for any completed futures
+                completed_futures = [f for f in future_to_url.keys() if f.done()]
+                if completed_futures:
+                    # Process completed futures
+                    for completed_future in completed_futures:
+                        url, depth = future_to_url.pop(completed_future)
+                        try:
+                            new_urls: List[Tuple[str, int]] = completed_future.result()
+                            for new_url, new_depth in new_urls:
+                                with ctx.visited_lock:
+                                    if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
+                                        break
+                                if (ctx.max_depth == -1 or new_depth <= ctx.max_depth):
+                                    future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
+                                    future_to_url[future] = (new_url, new_depth)
+                        except Exception as e:
+                            log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
+                # Continue even on timeout - other futures may still complete
             except StopIteration:
                 # No more futures to process
                 break

@@ -125,6 +125,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     # Start crawling from all starting URLs
     try:
         # Record start time for the whole crawling+ingestion operation
+        import time
         start_time = time.time()
         crawler(ctx, cat, starting_urls)
         log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
@@ -217,7 +218,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
             log.warning(f"Error executing after_scrape hook: {hook_error}")
         
         # Always close the session
-        ctx.session.close()
+        # Note: Session cleanup now handled by thread-local storage in crawler
 
     return response
 
