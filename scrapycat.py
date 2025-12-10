@@ -128,7 +128,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         import time
         start_time = time.time()
         crawler(ctx, cat, starting_urls)
-        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
+        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped, {len(ctx.failed_pages)} failed/timed out")
         
         # Fire after_crawl hook with serializable context data
         try:
@@ -140,6 +140,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         
         # Sequential ingestion after parallel scraping is complete
         if not ctx.scraped_pages:
+            if ctx.failed_pages:
+                return f"No pages were successfully scraped. {len(ctx.failed_pages)} pages failed or timed out."
             return "No pages were successfully scraped"
         
         ingested_count: int = 0
@@ -196,17 +198,17 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         # Compute elapsed time in minutes (rounded to 2 decimal places)
         elapsed_seconds = time.time() - start_time
         minutes = round(elapsed_seconds / 60.0, 2)
-        response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed in {minutes} minutes"
+        
+        # Build response message
+        if ctx.failed_pages:
+            response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed or timed out in {minutes} minutes"
+        else:
+            response: str = f"{ingested_count} URLs successfully imported in {minutes} minutes"
 
     except Exception as e:
         error_msg = str(e)
-        # Provide better context for timeout errors
-        if "TimeoutError" in error_msg or "futures unfinished" in error_msg:
-            log.error(f"ScrapyCat timeout - some pages took longer than {ctx.page_timeout} seconds to load: {error_msg}")
-            response = f"ScrapyCat completed with timeouts - some pages took longer than {ctx.page_timeout} seconds to load. Consider increasing the 'Page load timeout' setting."
-        else:
-            log.error(f"ScrapyCat operation failed: {error_msg}")
-            response = f"ScrapyCat failed: {error_msg}"
+        log.error(f"ScrapyCat operation failed: {error_msg}")
+        response = f"ScrapyCat failed: {error_msg}"
     finally:
         # Fire after_scrape hook with serializable context data
         try:

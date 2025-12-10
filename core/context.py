@@ -1,8 +1,8 @@
 from typing import Dict, Set, List, Optional
 from threading import Lock
-import requests
 from urllib.robotparser import RobotFileParser
 import uuid
+import time
 
 
 class ScrapyCatContext:
@@ -24,14 +24,13 @@ class ScrapyCatContext:
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
         self.page_timeout: int = 30  # Timeout for page loading operations
-        # Session reuse for better performance
-        self.session: requests.Session = requests.Session()  # Reuse connections
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"
-        })
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages
+        
+        # UI update throttling
+        self.last_update_time: float = 0.0
+        self.update_lock: Lock = Lock()
         
         # Session tracking fields for coordination with other plugins
         self.session_id: str = str(uuid.uuid4())  # Unique identifier for this scraping session
