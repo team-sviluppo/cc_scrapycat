@@ -18,6 +18,7 @@ def run_crawl4ai_setup() -> str:
         # Runs the setup command just like in the shell
         subprocess.run(["crawl4ai-setup"], check=True)
         subprocess.run(["playwright", "install"], check=True)
+        subprocess.run(["playwright", "install-deps"], check=True)
         log.info("Crawl4AI setup completed successfully.")
         return "Crawl4AI setup completed successfully."
     except subprocess.CalledProcessError as e:
@@ -67,8 +68,10 @@ async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
         async with AsyncWebCrawler() as crawler:
             run_config = CrawlerRunConfig()
             if wait_time > 0:
-                 # Use js_code to wait
-                 run_config.js_code = [f"await new Promise(resolve => setTimeout(resolve, {wait_time * 1000}));"]
+                 # Wait for network to be idle (all requests finished)
+                 run_config.wait_until = "networkidle"
+                 # Also add a delay to ensure content is rendered
+                 run_config.delay_before_return_html = wait_time
             
             result = await crawler.arun(url, config=run_config)
             

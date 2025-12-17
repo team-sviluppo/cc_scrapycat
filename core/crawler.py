@@ -239,7 +239,74 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
         new_urls.extend(unvisited_urls)
                             
     except Exception as e:
-        log.error(f"Page crawl failed: {page} - {str(e)}")
+        # Check if error is Content-Type related and retry with crawl4ai if available
+        if "Content-Type" in str(e) and (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and CRAWL4AI_AVAILABLE:
+            try:
+                log.info(f"Content-Type error detected, retrying with crawl4ai: {page}")
+                response_text = asyncio.run(crawl4ai_get_html(page))
+                soup = BeautifulSoup(response_text, "html.parser")
+                
+                # Store scraped page for later sequential ingestion
+                with ctx.scraped_pages_lock:
+                    ctx.scraped_pages.append(page)
+                    current_count = len(ctx.scraped_pages)
+                
+                # Send progress update (same logic as before)
+                if not ctx.scheduled:
+                    should_send = False
+                    with ctx.update_lock:
+                        now = time.time()
+                        if now - ctx.last_update_time > 0.5:
+                            ctx.last_update_time = now
+                            should_send = True
+                    
+                    if should_send:
+                        worker_name = threading.current_thread().name
+                        if "ThreadPoolExecutor" in worker_name:
+                            try:
+                                parts = worker_name.split("_")
+                                if len(parts) > 1:
+                                    worker_name = f"Worker {parts[-1]}"
+                            except:
+                                pass
+                        
+                        cat.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
+                
+                urls = [link["href"] for link in soup.select("a[href]")]
+                valid_urls = extract_valid_urls(urls, page, ctx)
+                
+                # Process found URLs (same logic as in the main try block)
+                recursive_urls = []
+                for url in valid_urls:
+                    parsed_url = urllib.parse.urlparse(url)
+                    url_domain = normalize_domain(parsed_url.netloc)
+                    
+                    if url_domain in ctx.root_domains:
+                        recursive_urls.append(url)
+                    elif url_domain in ctx.allowed_domains:
+                        should_add = False
+                        with ctx.visited_lock:
+                            if url not in ctx.visited_pages:
+                                ctx.visited_pages.add(url)
+                                should_add = True
+                        
+                        if should_add:
+                            with ctx.scraped_pages_lock:
+                                ctx.scraped_pages.append(url)
+                
+                # Batch check for unvisited URLs
+                unvisited_urls = []
+                for url in recursive_urls:
+                    if url not in ctx.visited_pages:
+                        if ctx.max_depth == -1 or (depth + 1) <= ctx.max_depth:
+                            unvisited_urls.append((url, depth + 1))
+                
+                new_urls.extend(unvisited_urls)
+                
+            except Exception as retry_error:
+                log.error(f"Page crawl failed even with crawl4ai retry: {page} - {str(retry_error)}")
+        else:
+            log.error(f"Page crawl failed: {page} - {str(e)}")
     
     return new_urls
 
