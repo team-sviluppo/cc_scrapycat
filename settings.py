@@ -19,6 +19,11 @@ class PluginSettings(BaseModel):
         title="Use crawl4ai for advanced crawling",
         description="Enable crawl4ai for better content extraction and JavaScript rendering"
     )
+    use_crawl4ai_fallback: bool = Field(
+        default=False,
+        title="Use crawl4ai as fallback",
+        description="If enabled, retries fetching pages with crawl4ai (and a wait time) if no links are found with standard scraping. Useful for dynamic pages."
+    )
     follow_robots_txt: bool = Field(
         default=False,
         title="Follow robots.txt",
@@ -70,7 +75,7 @@ class PluginSettings(BaseModel):
         description="Minute of the hour to run the scheduled command (0-59)",
     )
     skip_extensions: str = Field(
-        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc",
+        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a, .crdownload, .odp, ,ppt, .pptx",
         title="File extensions to skip",
         description="Comma-separated list of file extensions to skip during crawling (e.g., '.jpg,.png,.zip')"
     )

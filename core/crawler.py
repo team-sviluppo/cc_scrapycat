@@ -1,4 +1,5 @@
 import time
+import asyncio
 from typing import List, Tuple, Any, Dict
 import urllib.parse
 import threading
@@ -10,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
 from ..utils.robots import is_url_allowed_by_robots
+from ..integrations.crawl4ai import crawl4ai_get_html, CRAWL4AI_AVAILABLE
 
 
 # Thread-local storage for session objects
@@ -26,6 +28,69 @@ def get_thread_session() -> requests.Session:
     return _thread_local.session
 
 
+def extract_valid_urls(urls: List[str], page: str, ctx: ScrapyCatContext) -> List[str]:
+    """Extract and filter valid URLs from a list of raw URLs"""
+    valid_urls: List[str] = []
+    for url in urls:
+        if "#" in url:
+            # Skip anchor links
+            continue
+
+        # Handle absolute vs relative URLs correctly
+        if url.startswith(("http://", "https://")):
+            # URL is already absolute, use it as-is
+            new_url: str = url
+        else:
+            # URL is relative, join with current page
+            new_url = urllib.parse.urljoin(page, url)
+
+        parsed_new_url: urllib.parse.ParseResult = urllib.parse.urlparse(new_url)
+        new_url_domain: str = normalize_domain(parsed_new_url.netloc)
+
+        # Check if URL is allowed
+        is_root_domain: bool = new_url_domain in ctx.root_domains  # Can crawl recursively
+        is_allowed_domain: bool = new_url_domain in ctx.allowed_domains  # Single page only
+        
+        if not (is_root_domain or is_allowed_domain):
+            continue
+
+        # Check if URL matches any of the allowed paths (only for root domains)
+        if is_root_domain and ctx.allowed_paths:
+            path_allowed: bool = any(
+                parsed_new_url.path.startswith(allowed_path)
+                for allowed_path in ctx.allowed_paths
+            )
+            if not path_allowed:
+                continue
+        
+        # Skip URLs with GET parameters if configured
+        if ctx.skip_get_params and parsed_new_url.query:
+            continue
+
+        # Skip URLs with configured file extensions
+        if ctx.skip_extensions and new_url.lower().endswith(tuple(ctx.skip_extensions)):
+            continue
+
+        # Handle PDFs based on settings
+        if new_url.lower().endswith(".pdf"):
+            if ctx.ingest_pdf:
+                # PDFs should be added to scraped pages but not processed for URL extraction
+                should_add_pdf = False
+                with ctx.visited_lock:
+                    if new_url not in ctx.visited_pages:
+                        ctx.visited_pages.add(new_url)
+                        should_add_pdf = True
+                
+                if should_add_pdf:
+                    with ctx.scraped_pages_lock:
+                        ctx.scraped_pages.append(new_url)
+            continue
+
+        valid_urls.append(new_url)
+    
+    return valid_urls
+
+
 def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> List[Tuple[str, int]]:
     """Thread-safe page crawling function - now stores content for later sequential ingestion"""
     with ctx.visited_lock:
@@ -40,10 +105,52 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
     
     new_urls: List[Tuple[str, int]] = []
     try:
-        # Use thread-local session for true parallel requests
-        session = get_thread_session()
-        response: str = session.get(page).text
-        soup: BeautifulSoup = BeautifulSoup(response, "html.parser")
+        response_text = ""
+        is_html = True  # Flag to track if content is HTML
+        
+        # Check if URL looks like a non-HTML file based on extension
+        if page.lower().endswith(".pdf") or (ctx.skip_extensions and page.lower().endswith(tuple(ctx.skip_extensions))):
+            is_html = False
+
+        if is_html and ctx.use_crawl4ai and CRAWL4AI_AVAILABLE:
+            try:
+                # Use crawl4ai to get HTML (executes JS)
+                response_text = asyncio.run(crawl4ai_get_html(page))
+            except Exception as e:
+                log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
+                # Fallback to requests
+                session = get_thread_session()
+                response = session.get(page)
+                
+                # Check Content-Type
+                content_type = response.headers.get('Content-Type', '').lower()
+                if 'text/html' not in content_type:
+                    is_html = False
+                
+                # Check Content-Disposition for forced downloads
+                content_disposition = response.headers.get('Content-Disposition', '').lower()
+                if 'attachment' in content_disposition:
+                    is_html = False
+                    
+                response_text = response.text
+        else:
+            # Use thread-local session for true parallel requests
+            session = get_thread_session()
+            response = session.get(page)
+            
+            # Check Content-Type
+            content_type = response.headers.get('Content-Type', '').lower()
+            if 'text/html' not in content_type:
+                is_html = False
+            
+            # Check Content-Disposition for forced downloads
+            content_disposition = response.headers.get('Content-Disposition', '').lower()
+            if 'attachment' in content_disposition:
+                is_html = False
+                
+            response_text = response.text
+
+        soup: BeautifulSoup = BeautifulSoup(response_text, "html.parser")
         
         # Store scraped page for later sequential ingestion
         with ctx.scraped_pages_lock:
@@ -77,69 +184,24 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                 cat.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
+        
+        # Extract valid URLs using the helper function
+        valid_urls: List[str] = extract_valid_urls(urls, page, ctx)
 
-        valid_urls: List[str] = []
-        for url in urls:
-            if "#" in url:
-                # Skip anchor links
-                continue
-
-            # Handle absolute vs relative URLs correctly
-            if url.startswith(("http://", "https://")):
-                # URL is already absolute, use it as-is
-                new_url: str = url
-            else:
-                # URL is relative, join with current page
-                new_url = urllib.parse.urljoin(page, url)
-
-            parsed_new_url: urllib.parse.ParseResult = urllib.parse.urlparse(new_url)
-            new_url_domain: str = normalize_domain(parsed_new_url.netloc)
-
-            # Check if URL is allowed
-            is_root_domain: bool = new_url_domain in ctx.root_domains  # Can crawl recursively
-            is_allowed_domain: bool = new_url_domain in ctx.allowed_domains  # Single page only
-            
-            if not (is_root_domain or is_allowed_domain):
-                continue
-
-            # Check if URL matches any of the allowed paths (only for root domains)
-            if is_root_domain and ctx.allowed_paths:
-                path_allowed: bool = any(
-                    parsed_new_url.path.startswith(allowed_path)
-                    for allowed_path in ctx.allowed_paths
-                )
-                if not path_allowed:
-                    continue
-
-            # Check robots.txt compliance
-            if ctx.follow_robots_txt and not is_url_allowed_by_robots(ctx, new_url):
-                log.debug(f"URL blocked by robots.txt: {new_url}")
-                continue
-
-            # Skip URLs with GET parameters if the setting is enabled
-            if ctx.skip_get_params and "?" in new_url:
-                continue
-
-            # Skip URLs with configured file extensions
-            if ctx.skip_extensions and new_url.lower().endswith(tuple(ctx.skip_extensions)):
-                continue
-
-            # Handle PDFs based on settings
-            if new_url.lower().endswith(".pdf"):
-                if ctx.ingest_pdf:
-                    # PDFs should be added to scraped pages but not processed for URL extraction
-                    should_add_pdf = False
-                    with ctx.visited_lock:
-                        if new_url not in ctx.visited_pages:
-                            ctx.visited_pages.add(new_url)
-                            should_add_pdf = True
-                    
-                    if should_add_pdf:
-                        with ctx.scraped_pages_lock:
-                            ctx.scraped_pages.append(new_url)
-                continue
-
-            valid_urls.append(new_url)
+        # Retry logic for dynamic content if no valid URLs found
+        # Only retry if the content was identified as HTML (or if we used crawl4ai initially)
+        if is_html and not valid_urls and depth < ctx.max_depth and (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and CRAWL4AI_AVAILABLE:
+             log.info(f"No valid links found on {page}, retrying with wait for dynamic content...")
+             try:
+                 response_text = asyncio.run(crawl4ai_get_html(page, wait_time=5))
+                 soup = BeautifulSoup(response_text, "html.parser")
+                 urls = [link["href"] for link in soup.select("a[href]")]
+                 # Re-extract valid URLs from the new content
+                 valid_urls = extract_valid_urls(urls, page, ctx)
+                 if valid_urls:
+                     log.info(f"Found {len(valid_urls)} valid links after waiting on {page}")
+             except Exception as e:
+                 log.warning(f"Retry with crawl4ai failed for {page}: {e}")
 
         # Process found URLs: scrape allowed domains immediately, queue root domains for recursion
         recursive_urls: List[str] = []
@@ -169,7 +231,9 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
         # This is just a pre-filter to avoid submitting too many duplicate tasks
         for url in recursive_urls:
             if url not in ctx.visited_pages:
-                unvisited_urls.append((url, depth + 1))
+                # Only continue recursion if we haven't reached max_depth
+                if ctx.max_depth == -1 or (depth + 1) <= ctx.max_depth:
+                    unvisited_urls.append((url, depth + 1))
         
         # Add unvisited URLs to new_urls
         new_urls.extend(unvisited_urls)

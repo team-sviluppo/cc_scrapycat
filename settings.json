@@ -6,12 +6,13 @@
     "allowed_extra_roots": "",
     "max_workers": 12,
     "chunk_size": 1024,
-    "chunk_overlap": 128,
+    "chunk_overlap": 256,
     "use_crawl4ai": false,
-    "scheduled_command": "",
-    "schedule_hour": 2,
-    "schedule_minute": 0,
+    "scheduled_command": "@scrapycat https://www.comune.vicopisano.pi.it/",
+    "schedule_hour": 14,
+    "schedule_minute": 47,
     "follow_robots_txt": true,
-    "skip_extensions": ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc",
-    "page_timeout": 30
+    "skip_extensions": ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a",
+    "page_timeout": 30,
+    "use_crawl4ai_fallback": true
 }

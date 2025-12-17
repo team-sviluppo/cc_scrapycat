@@ -16,6 +16,7 @@ class ScrapyCatContext:
         self.max_pages: int = -1  # Max pages to crawl (-1 for unlimited)
         self.allowed_domains: Set[str] = set()  # Set of allowed domains (single page scraping only)
         self.use_crawl4ai: bool = False  # Whether to use crawl4ai for content extraction
+        self.use_crawl4ai_fallback: bool = False  # Whether to use crawl4ai as fallback for empty pages
         self.follow_robots_txt: bool = False  # Whether to follow robots.txt
         self.robots_cache: Dict[str, Optional[RobotFileParser]] = {}  # Cache robots.txt parsers by domain
         self.visited_lock: Lock = Lock()  # Thread-safe access to visited_pages

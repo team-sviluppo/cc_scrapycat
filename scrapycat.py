@@ -61,6 +61,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.skip_get_params = settings.get("skip_get_params", False)
     ctx.max_depth = settings.get("max_depth", -1)
     ctx.use_crawl4ai = settings.get("use_crawl4ai", False)
+    ctx.use_crawl4ai_fallback = settings.get("use_crawl4ai_fallback", False)
     ctx.follow_robots_txt = settings.get("follow_robots_txt", False)
 
     # Build allowed domains set (for single-page scraping only, no recursion)
@@ -87,9 +88,10 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     skip_extensions_str = settings.get("skip_extensions", ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc")
     ctx.skip_extensions = [ext.strip() for ext in skip_extensions_str.split(",") if ext.strip()]
     # Check if crawl4ai is requested but not available
-    if ctx.use_crawl4ai and not CRAWL4AI_AVAILABLE:
+    if (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and not CRAWL4AI_AVAILABLE:
         log.warning("crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling.")
         ctx.use_crawl4ai = False
+        ctx.use_crawl4ai_fallback = False
 
     # Extract root domains and paths from starting URLs
     ctx.root_domains = set()
