@@ -1,7 +1,7 @@
 {
     "ingest_pdf": false,
     "skip_get_params": true,
-    "max_depth": 3,
+    "max_depth": 1,
     "max_pages": -1,
     "allowed_extra_roots": "",
     "max_workers": 12,

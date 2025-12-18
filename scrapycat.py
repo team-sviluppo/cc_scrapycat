@@ -136,7 +136,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         try:
             context_data = ctx.to_hook_context()
             log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
+            context_data = cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
+            ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_crawl hook: {hook_error}")
         
