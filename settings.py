@@ -84,6 +84,11 @@ class PluginSettings(BaseModel):
         title="Page load timeout (seconds)",
         description="Maximum time to wait for a page to load before checking for other completed pages (in seconds)"
     )
+    json_logs: bool = Field(
+        default=False,
+        title="Enable JSON logs",
+        description="If enabled, logs will be formatted as JSON objects following a specific schema."
+    )
 
     @validator('page_timeout')
     def validate_page_timeout(cls, v):

@@ -129,3 +129,40 @@ Executed after the entire scraping and ingestion process is complete.
 ## Scheduled Parameter
 
 The plugin includes a `scheduled` parameter in the processing function that prevents websocket errors when running automated scheduled jobs. When `scheduled=True`, progress messages are not sent via websocket to avoid logging errors during unattended operations.
+## Log Schema
+
+This plugin uses structured JSON logging to facilitate monitoring and debugging. All logs follow this base structure:
+
+```json
+{
+  "component": "cc_scrapycat",
+  "event": "<event_name>",
+  "data": {
+    ... <event_specific_data>
+  }
+}
+```
+
+### Event Types
+
+| Event Name | Description | Data Fields |
+|------------|-------------|-------------|
+| `validation_warning` | Logged when an allowed URL is invalid | `url` |
+| `command_error` | Logged when command validation fails | `error` |
+| `crawl4ai_warning` | Logged when crawl4ai is requested but unavailable | `message` |
+| `robots_loaded` | Logged when robots.txt is preloaded | `count` |
+| `start` | Logged when scraping starts | `urls_count`, `max_pages`, `max_depth`, `workers`, `robots_txt`, `single_page_domains`, `recursive_domains` |
+| `hook_error` | Logged when a hook execution fails | `hook`, `error` |
+| `crawl_complete` | Logged when crawling is finished | `scraped_count`, `failed_count` |
+| `crawl4ai_fallback` | Logged when crawl4ai fails and falls back to default | `url`, `error` |
+| `ingestion_progress` | Logged during ingestion (websocket message) | `current`, `total`, `url` |
+| `ingestion_error` | Logged when page ingestion fails | `url`, `error` |
+| `ingestion_complete` | Logged when ingestion is finished | `success_count`, `failed_count` |
+| `operation_error` | Logged when the entire operation fails | `error` |
+| `page_blocked` | Logged when a page is blocked by robots.txt | `url` |
+| `crawl4ai_page_fallback` | Logged when crawl4ai fails for a page | `url`, `error` |
+| `dynamic_retry` | Logged when retrying for dynamic content | `url` |
+| `robots_load_success` | Logged when robots.txt is loaded successfully | `domain`, `url` |
+| `robots_load_failed` | Logged when robots.txt load fails | `url`, `error` |
+| `robots_not_found` | Logged when robots.txt is not found | `domain` |
+| `robots_error` | Logged when robots.txt processing errors | `domain`, `error` |

@@ -6,6 +6,7 @@ import os
 import asyncio
 import urllib.parse
 import time
+import json
 
 from .core.context import ScrapyCatContext
 from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -47,10 +48,24 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                 command_allowed_urls.append(cleaned_url)
             else:
                 # Log validation issues for debugging
-                log.warning(f"Invalid allowed URL ignored: {cleaned_url}")
+                if settings.get("json_logs", False):
+                    log.warning(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "validation_warning",
+                        "data": {"url": cleaned_url}
+                    }))
+                else:
+                    log.warning(f"Invalid allowed URL ignored: {cleaned_url}")
     
     if not starting_urls:
-        log.error("No valid starting URLs provided")
+        if settings.get("json_logs", False):
+            log.error(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "command_error",
+                "data": {"error": "No valid starting URLs provided"}
+            }))
+        else:
+            log.error("No valid starting URLs provided")
         return "Error: No valid starting URLs provided"
 
     # Initialize context for this run
@@ -63,6 +78,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.use_crawl4ai = settings.get("use_crawl4ai", False)
     ctx.use_crawl4ai_fallback = settings.get("use_crawl4ai_fallback", False)
     ctx.follow_robots_txt = settings.get("follow_robots_txt", False)
+    ctx.json_logs = settings.get("json_logs", False)
 
     # Build allowed domains set (for single-page scraping only, no recursion)
     # 1. Add domains from settings (normalize them for consistency)
@@ -89,7 +105,15 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.skip_extensions = [ext.strip() for ext in skip_extensions_str.split(",") if ext.strip()]
     # Check if crawl4ai is requested but not available
     if (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and not CRAWL4AI_AVAILABLE:
-        log.warning("crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling.")
+        msg = "crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling."
+        if ctx.json_logs:
+            log.warning(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "crawl4ai_warning",
+                "data": {"message": msg}
+            }))
+        else:
+            log.warning(msg)
         ctx.use_crawl4ai = False
         ctx.use_crawl4ai_fallback = False
 
@@ -108,13 +132,35 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         all_domains = ctx.root_domains.union(ctx.allowed_domains)
         for domain in all_domains:
             load_robots_txt(ctx, domain)
-        log.info(f"Robots.txt preloaded for {len(all_domains)} domains")
+        if ctx.json_logs:
+            log.info(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "robots_loaded",
+                "data": {"count": len(all_domains)}
+            }))
+        else:
+            log.info(f"Robots.txt preloaded for {len(all_domains)} domains")
 
-    log.info(f"ScrapyCat started: {len(starting_urls)} URLs, max_pages={ctx.max_pages}, max_depth={ctx.max_depth}, workers={ctx.max_workers}, robots.txt={ctx.follow_robots_txt}")
-    if ctx.allowed_domains:
-        log.info(f"Single-page domains configured: {len(ctx.allowed_domains)} domains")
-    if ctx.root_domains:
-        log.info(f"Recursive domains configured: {len(ctx.root_domains)} domains")
+    if ctx.json_logs:
+        log.info(json.dumps({
+            "component": "cc_scrapycat",
+            "event": "start",
+            "data": {
+                "urls_count": len(starting_urls),
+                "max_pages": ctx.max_pages,
+                "max_depth": ctx.max_depth,
+                "workers": ctx.max_workers,
+                "robots_txt": ctx.follow_robots_txt,
+                "single_page_domains": len(ctx.allowed_domains) if ctx.allowed_domains else 0,
+                "recursive_domains": len(ctx.root_domains) if ctx.root_domains else 0
+            }
+        }))
+    else:
+        log.info(f"ScrapyCat started: {len(starting_urls)} URLs, max_pages={ctx.max_pages}, max_depth={ctx.max_depth}, workers={ctx.max_workers}, robots.txt={ctx.follow_robots_txt}")
+        if ctx.allowed_domains:
+            log.info(f"Single-page domains configured: {len(ctx.allowed_domains)} domains")
+        if ctx.root_domains:
+            log.info(f"Recursive domains configured: {len(ctx.root_domains)} domains")
 
     # Fire before_scrape hook with serializable context data
     try:
@@ -122,7 +168,14 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         context_data = cat.mad_hatter.execute_hook("scrapycat_before_scrape", context_data, cat=cat)
         ctx.update_from_hook_context(context_data)
     except Exception as hook_error:
-        log.warning(f"Error executing before_scrape hook: {hook_error}")
+        if ctx.json_logs:
+            log.warning(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "hook_error",
+                "data": {"hook": "before_scrape", "error": str(hook_error)}
+            }))
+        else:
+            log.warning(f"Error executing before_scrape hook: {hook_error}")
 
     # Start crawling from all starting URLs
     try:
@@ -130,22 +183,56 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         import time
         start_time = time.time()
         crawler(ctx, cat, starting_urls)
-        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped, {len(ctx.failed_pages)} failed/timed out")
+        
+        if ctx.json_logs:
+            log.info(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "crawl_complete",
+                "data": {
+                    "scraped_count": len(ctx.scraped_pages),
+                    "failed_count": len(ctx.failed_pages)
+                }
+            }))
+        else:
+            log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped, {len(ctx.failed_pages)} failed/timed out")
         
         # Fire after_crawl hook with serializable context data
         try:
             context_data = ctx.to_hook_context()
-            log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            if not ctx.json_logs:
+                log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
             context_data = cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
-            log.warning(f"Error executing after_crawl hook: {hook_error}")
+            if ctx.json_logs:
+                log.warning(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "hook_error",
+                    "data": {"hook": "after_crawl", "error": str(hook_error)}
+                }))
+            else:
+                log.warning(f"Error executing after_crawl hook: {hook_error}")
         
         # Sequential ingestion after parallel scraping is complete
         if not ctx.scraped_pages:
+            # Compute elapsed time even if no pages scraped
+            elapsed_seconds = time.time() - start_time
+            minutes = round(elapsed_seconds / 60.0, 2)
+            
+            if ctx.json_logs:
+                log.info(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "ingestion_complete",
+                    "data": {
+                        "success_count": 0,
+                        "failed_count": len(ctx.failed_pages),
+                        "elapsed_minutes": minutes
+                    }
+                }))
+            
             if ctx.failed_pages:
-                return f"No pages were successfully scraped. {len(ctx.failed_pages)} pages failed or timed out."
-            return "No pages were successfully scraped"
+                return f"No pages were successfully scraped. {len(ctx.failed_pages)} pages failed or timed out in {minutes} minutes."
+            return f"No pages were successfully scraped in {minutes} minutes."
         
         ingested_count: int = 0
         for i, scraped_url in enumerate(ctx.scraped_pages):
@@ -167,7 +254,14 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                         os.remove(output_file)
                         ingested_count += 1
                     except Exception as crawl4ai_error:
-                        log.warning(f"crawl4ai failed for {scraped_url}, falling back to default method: {str(crawl4ai_error)}")
+                        if ctx.json_logs:
+                            log.warning(json.dumps({
+                                "component": "cc_scrapycat",
+                                "event": "crawl4ai_fallback",
+                                "data": {"url": scraped_url, "error": str(crawl4ai_error)}
+                            }))
+                        else:
+                            log.warning(f"crawl4ai failed for {scraped_url}, falling back to default method: {str(crawl4ai_error)}")
                         # Fallback to default method
                         metadata: Dict[str, str] = {
                             "url": scraped_url,
@@ -191,13 +285,40 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                 # Send progress update
                 if not ctx.scheduled:
                     cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
+                    if ctx.json_logs:
+                        log.info(json.dumps({
+                            "component": "cc_scrapycat",
+                            "event": "ingestion_progress",
+                            "data": {
+                                "current": ingested_count,
+                                "total": len(ctx.scraped_pages),
+                                "url": scraped_url
+                            }
+                        }))
                 
             except Exception as e:
                 ctx.failed_pages.append(scraped_url)  # Track failed pages in context
-                log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
+                if ctx.json_logs:
+                    log.error(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "ingestion_error",
+                        "data": {"url": scraped_url, "error": str(e)}
+                    }))
+                else:
+                    log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
                 # Continue with next page even if one fails
         
-        log.info(f"Ingestion completed: {ingested_count} successful, {len(ctx.failed_pages)} failed")
+        if ctx.json_logs:
+            log.info(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "ingestion_complete",
+                "data": {
+                    "success_count": ingested_count,
+                    "failed_count": len(ctx.failed_pages)
+                }
+            }))
+        else:
+            log.info(f"Ingestion completed: {ingested_count} successful, {len(ctx.failed_pages)} failed")
         # Compute elapsed time in minutes (rounded to 2 decimal places)
         elapsed_seconds = time.time() - start_time
         minutes = round(elapsed_seconds / 60.0, 2)
@@ -210,17 +331,32 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
 
     except Exception as e:
         error_msg = str(e)
-        log.error(f"ScrapyCat operation failed: {error_msg}")
+        if ctx.json_logs:
+            log.error(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "operation_error",
+                "data": {"error": error_msg}
+            }))
+        else:
+            log.error(f"ScrapyCat operation failed: {error_msg}")
         response = f"ScrapyCat failed: {error_msg}"
     finally:
         # Fire after_scrape hook with serializable context data
         try:
             context_data = ctx.to_hook_context()
-            log.debug(f"Firing after_scrape hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            if not ctx.json_logs:
+                log.debug(f"Firing after_scrape hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
             cat.mad_hatter.execute_hook("scrapycat_after_scrape", context_data, cat=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
-            log.warning(f"Error executing after_scrape hook: {hook_error}")
+            if ctx.json_logs:
+                log.warning(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "hook_error",
+                    "data": {"hook": "after_scrape", "error": str(hook_error)}
+                }))
+            else:
+                log.warning(f"Error executing after_scrape hook: {hook_error}")
         
         # Always close the session
         # Note: Session cleanup now handled by thread-local storage in crawler

@@ -25,6 +25,7 @@ class ScrapyCatContext:
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
         self.page_timeout: int = 30  # Timeout for page loading operations
+        self.json_logs: bool = False  # Whether to use JSON logging
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages
@@ -38,6 +39,7 @@ class ScrapyCatContext:
         self.command: str = ""  # The command that triggered this scraping session
         self.scheduled: bool = False  # Whether this command is running from scheduler (True) or chat (False)
         self.failed_pages: List[str] = []  # URLs that failed during ingestion
+        self.ignored_pages: List[str] = []  # URLs that were scraped but ignored (e.g. unchanged content)
     
     def to_hook_context(self) -> Dict[str, any]:
         """Create a serializable context data dictionary for hook execution"""
@@ -47,6 +49,7 @@ class ScrapyCatContext:
             "scheduled": bool(self.scheduled),
             "scraped_pages": [str(url) for url in self.scraped_pages],
             "failed_pages": [str(url) for url in self.failed_pages],
+            "ignored_pages": [str(url) for url in self.ignored_pages],
             "chunk_size": int(self.chunk_size),
             "chunk_overlap": int(self.chunk_overlap),
             "page_timeout": int(self.page_timeout),
@@ -60,6 +63,7 @@ class ScrapyCatContext:
         self.scheduled = context_data.get("scheduled", self.scheduled)
         self.scraped_pages = context_data.get("scraped_pages", self.scraped_pages)
         self.failed_pages = context_data.get("failed_pages", self.failed_pages)
+        self.ignored_pages = context_data.get("ignored_pages", self.ignored_pages)
         self.chunk_size = context_data.get("chunk_size", self.chunk_size)
         self.chunk_overlap = context_data.get("chunk_overlap", self.chunk_overlap)
         self.page_timeout = context_data.get("page_timeout", self.page_timeout)

@@ -4,6 +4,7 @@ from typing import List, Tuple, Any, Dict
 import urllib.parse
 import threading
 import requests
+import json
 from bs4 import BeautifulSoup
 from cat.log import log
 from cat.looking_glass.stray_cat import StrayCat
@@ -100,7 +101,14 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
     
     # Check robots.txt compliance for this page
     if not is_url_allowed_by_robots(ctx, page):
-        log.info(f"Page blocked by robots.txt, skipping: {page}")
+        if ctx.json_logs:
+            log.info(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "page_blocked",
+                "data": {"url": page}
+            }))
+        else:
+            log.info(f"Page blocked by robots.txt, skipping: {page}")
         return []
     
     new_urls: List[Tuple[str, int]] = []
@@ -117,7 +125,14 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                 # Use crawl4ai to get HTML (executes JS)
                 response_text = asyncio.run(crawl4ai_get_html(page))
             except Exception as e:
-                log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
+                if ctx.json_logs:
+                    log.warning(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "crawl4ai_page_fallback",
+                        "data": {"url": page, "error": str(e)}
+                    }))
+                else:
+                    log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
                 # Fallback to requests
                 session = get_thread_session()
                 response = session.get(page)
@@ -191,7 +206,14 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
         # Retry logic for dynamic content if no valid URLs found
         # Only retry if the content was identified as HTML (or if we used crawl4ai initially)
         if is_html and not valid_urls and depth < ctx.max_depth and (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and CRAWL4AI_AVAILABLE:
-             log.info(f"No valid links found on {page}, retrying with wait for dynamic content...")
+             if ctx.json_logs:
+                 log.info(json.dumps({
+                     "component": "cc_scrapycat",
+                     "event": "dynamic_retry",
+                     "data": {"url": page}
+                 }))
+             else:
+                 log.info(f"No valid links found on {page}, retrying with wait for dynamic content...")
              try:
                  response_text = asyncio.run(crawl4ai_get_html(page, wait_time=5))
                  soup = BeautifulSoup(response_text, "html.parser")
@@ -199,9 +221,17 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                  # Re-extract valid URLs from the new content
                  valid_urls = extract_valid_urls(urls, page, ctx)
                  if valid_urls:
-                     log.info(f"Found {len(valid_urls)} valid links after waiting on {page}")
+                     if not ctx.json_logs:
+                         log.info(f"Found {len(valid_urls)} valid links after waiting on {page}")
              except Exception as e:
-                 log.warning(f"Retry with crawl4ai failed for {page}: {e}")
+                 if ctx.json_logs:
+                     log.warning(json.dumps({
+                         "component": "cc_scrapycat",
+                         "event": "crawl4ai_page_fallback",
+                         "data": {"url": page, "error": str(e)}
+                     }))
+                 else:
+                     log.warning(f"Retry with crawl4ai failed for {page}: {e}")
 
         # Process found URLs: scrape allowed domains immediately, queue root domains for recursion
         recursive_urls: List[str] = []
@@ -242,7 +272,14 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
         # Check if error is Content-Type related and retry with crawl4ai if available
         if "Content-Type" in str(e) and (ctx.use_crawl4ai or ctx.use_crawl4ai_fallback) and CRAWL4AI_AVAILABLE:
             try:
-                log.info(f"Content-Type error detected, retrying with crawl4ai: {page}")
+                if ctx.json_logs:
+                    log.info(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "dynamic_retry",
+                        "data": {"url": page, "reason": "content_type_error"}
+                    }))
+                else:
+                    log.info(f"Content-Type error detected, retrying with crawl4ai: {page}")
                 response_text = asyncio.run(crawl4ai_get_html(page))
                 soup = BeautifulSoup(response_text, "html.parser")
                 
@@ -304,9 +341,23 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                 new_urls.extend(unvisited_urls)
                 
             except Exception as retry_error:
-                log.error(f"Page crawl failed even with crawl4ai retry: {page} - {str(retry_error)}")
+                if ctx.json_logs:
+                    log.error(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "crawl4ai_page_fallback",
+                        "data": {"url": page, "error": str(retry_error)}
+                    }))
+                else:
+                    log.error(f"Page crawl failed even with crawl4ai retry: {page} - {str(retry_error)}")
         else:
-            log.error(f"Page crawl failed: {page} - {str(e)}")
+            if ctx.json_logs:
+                log.error(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "crawl_error",
+                    "data": {"url": page, "error": str(e)}
+                }))
+            else:
+                log.error(f"Page crawl failed: {page} - {str(e)}")
     
     return new_urls
 
@@ -327,7 +378,8 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
             # Check max_pages limit before processing more futures
             with ctx.visited_lock:
                 if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
-                    log.info(f"Max pages limit reached: {ctx.max_pages} pages")
+                    if not ctx.json_logs:
+                        log.info(f"Max pages limit reached: {ctx.max_pages} pages")
                     # Cancel remaining futures
                     for remaining_future in future_to_url.keys():
                         remaining_future.cancel()
@@ -346,12 +398,20 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
             else:
                 # Timeout occurred - no futures completed
                 # Cancel all remaining futures and exit gracefully
-                log.warning(f"Timeout waiting for {len(future_to_url)} futures - cancelling remaining tasks")
+                if ctx.json_logs:
+                    log.warning(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "timeout",
+                        "data": {"pending_futures": len(future_to_url)}
+                    }))
+                else:
+                    log.warning(f"Timeout waiting for {len(future_to_url)} futures - cancelling remaining tasks")
                 for future in list(future_to_url.keys()):
                     future.cancel()
                     url, depth = future_to_url.pop(future)
                     ctx.failed_pages.append(url)
-                    log.warning(f"URL cancelled due to timeout: {url}")
+                    if not ctx.json_logs:
+                        log.warning(f"URL cancelled due to timeout: {url}")
                 break
             
             # Process all completed futures in this batch
@@ -376,5 +436,12 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                             future_to_url[future] = (new_url, new_depth)
                             
                 except Exception as e:
-                    log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
+                    if ctx.json_logs:
+                        log.error(json.dumps({
+                            "component": "cc_scrapycat",
+                            "event": "crawl_error",
+                            "data": {"url": url, "depth": depth, "error": str(e)}
+                        }))
+                    else:
+                        log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
                     ctx.failed_pages.append(url)

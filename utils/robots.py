@@ -1,5 +1,6 @@
 from typing import Optional
 import urllib.parse
+import json
 from urllib.robotparser import RobotFileParser
 from cat.log import log
 from ..core.context import ScrapyCatContext
@@ -41,19 +42,47 @@ def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFilePar
                     rp.set_url(robots_url)
                     rp.read()
                     ctx.robots_cache[domain] = rp
-                    log.info(f"Loaded robots.txt for {domain} from {robots_url}")
+                    if ctx.json_logs:
+                        log.info(json.dumps({
+                            "component": "cc_scrapycat",
+                            "event": "robots_load_success",
+                            "data": {"domain": domain, "url": robots_url}
+                        }))
+                    else:
+                        log.info(f"Loaded robots.txt for {domain} from {robots_url}")
                     return rp
             except Exception as e:
-                log.warning(f"Failed to load robots.txt from {robots_url}: {e}")
+                if ctx.json_logs:
+                    log.warning(json.dumps({
+                        "component": "cc_scrapycat",
+                        "event": "robots_load_failed",
+                        "data": {"url": robots_url, "error": str(e)}
+                    }))
+                else:
+                    log.warning(f"Failed to load robots.txt from {robots_url}: {e}")
                 continue
         
         # If we get here, robots.txt is not accessible
-        log.info(f"No accessible robots.txt found for {domain}, allowing all URLs")
+        if ctx.json_logs:
+            log.info(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "robots_not_found",
+                "data": {"domain": domain}
+            }))
+        else:
+            log.info(f"No accessible robots.txt found for {domain}, allowing all URLs")
         ctx.robots_cache[domain] = None
         return None
         
     except Exception as e:
-        log.warning(f"Error loading robots.txt for {domain}: {e}")
+        if ctx.json_logs:
+            log.warning(json.dumps({
+                "component": "cc_scrapycat",
+                "event": "robots_error",
+                "data": {"domain": domain, "error": str(e)}
+            }))
+        else:
+            log.warning(f"Error loading robots.txt for {domain}: {e}")
         ctx.robots_cache[domain] = None
         return None
 
