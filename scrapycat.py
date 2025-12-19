@@ -5,7 +5,6 @@ from cat.looking_glass.stray_cat import StrayCat
 import os
 import asyncio
 import urllib.parse
-import time
 import json
 
 from .core.context import ScrapyCatContext
@@ -362,6 +361,12 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         # Note: Session cleanup now handled by thread-local storage in crawler
 
     return response
+
+@hook
+def after_cat_bootstrap(cat):
+    settings = cat.mad_hatter.get_plugin().load_settings()
+    if settings.get('use_crawl4ai', False) or settings.get('use_crawl4ai_fallback', False):
+        run_crawl4ai_setup()
 
 
 @hook(priority=9)
