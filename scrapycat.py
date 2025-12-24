@@ -313,7 +313,8 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                 "event": "ingestion_complete",
                 "data": {
                     "success_count": ingested_count,
-                    "failed_count": len(ctx.failed_pages)
+                    "failed_count": len(ctx.failed_pages),
+                    "elapsed_minutes": round((time.time() - start_time) / 60.0, 2)
                 }
             }))
         else:
@@ -324,8 +325,29 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         
         # Build response message
         if ctx.failed_pages:
+            if ctx.json_logs:
+                log.info(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "operation_summary",
+                    "data": {
+                        "ingested_count": ingested_count,
+                        "failed_count": len(ctx.failed_pages),
+                        "elapsed_minutes": minutes
+                    }
+                }))
             response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed or timed out in {minutes} minutes"
+
         else:
+            if ctx.json_logs:
+                log.info(json.dumps({
+                    "component": "cc_scrapycat",
+                    "event": "operation_summary",
+                    "data": {
+                        "ingested_count": ingested_count,
+                        "failed_count": len(ctx.failed_pages),
+                        "elapsed_minutes": minutes
+                    }
+                }))
             response: str = f"{ingested_count} URLs successfully imported in {minutes} minutes"
 
     except Exception as e:
@@ -357,9 +379,6 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
             else:
                 log.warning(f"Error executing after_scrape hook: {hook_error}")
         
-        # Always close the session
-        # Note: Session cleanup now handled by thread-local storage in crawler
-
     return response
 
 @hook
