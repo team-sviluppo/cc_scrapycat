@@ -25,7 +25,6 @@ class ScrapyCatContext:
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
         self.page_timeout: int = 30  # Timeout for page loading operations
-        self.json_logs: bool = False  # Whether to use JSON logging
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages

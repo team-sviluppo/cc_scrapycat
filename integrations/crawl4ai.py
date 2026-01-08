@@ -1,4 +1,6 @@
 import subprocess
+import json
+from typing import Any
 from cat.log import log
 
 # crawl4ai imports
@@ -12,21 +14,23 @@ except ImportError:
     log.warning("crawl4ai not available. Install it to use advanced crawling features.")
 
 
-def run_crawl4ai_setup() -> str:
+def run_crawl4ai_setup(cat: Any) -> str:
     """Setup crawl4ai dependencies and configuration"""
     try:
         # Runs the setup command just like in the shell
         subprocess.run(["crawl4ai-setup"], check=True)
         subprocess.run(["playwright", "install"], check=True)
         subprocess.run(["playwright", "install-deps"], check=True)
+        
         log.info("Crawl4AI setup completed successfully.")
         return "Crawl4AI setup completed successfully."
     except subprocess.CalledProcessError as e:
         log.error(f"Error during Crawl4AI setup: {e}")
         return "Error during Crawl4AI setup."
     except FileNotFoundError:
-        log.error("crawl4ai-setup or playwright command not found. Make sure crawl4ai is installed.")
-        return "crawl4ai-setup or playwright command not found. Make sure crawl4ai is installed."
+        msg = "crawl4ai-setup or playwright command not found. Make sure crawl4ai is installed."
+        log.error(msg)
+        return msg
 
 
 async def crawl4i(url: str) -> str:
@@ -59,7 +63,7 @@ async def crawl4i(url: str) -> str:
             return ""
 
 
-async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
+async def crawl4ai_get_html(url: str, cat: Any, wait_time: int = 0) -> str:
     """Use crawl4ai to get the rendered HTML of a page"""
     if not CRAWL4AI_AVAILABLE:
         raise ImportError("crawl4ai is not available. Please install it first.")

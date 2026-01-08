@@ -166,3 +166,28 @@ This plugin uses structured JSON logging to facilitate monitoring and debugging.
 | `robots_load_failed` | Logged when robots.txt load fails | `url`, `error` |
 | `robots_not_found` | Logged when robots.txt is not found | `domain` |
 | `robots_error` | Logged when robots.txt processing errors | `domain`, `error` |
+| `crawl4ai_setup_success` | Logged when crawl4ai setup completes successfully | `message` |
+| `crawl4ai_setup_error` | Logged when crawl4ai setup fails | `error` |
+| `crawl4ai_setup_not_found` | Logged when crawl4ai setup command is missing | `error` |
+| `crawl4ai_failure` | Logged when crawl4ai fails to process a URL | `url`, `error` |
+| `crawl4ai_navigation_error` | Logged when crawl4ai encounters navigation error | `url`, `error` |
+| `crawl4ai_error` | Logged when crawl4ai encounters generic error | `url`, `error` |
+| `schedule_removed` | Logged when a scheduled job is removed | `job_id` |
+| `schedule_disabled` | Logged when scheduling is disabled | - |
+| `schedule_updated` | Logged when schedule is updated | `command`, `hour`, `minute`, `current_utc` |
+| `scheduler_status` | Logged to report scheduler running status | `running` |
+| `scheduler_not_running` | Logged when scheduler is not running | - |
+| `scheduler_jobs_count` | Logged to report total scheduled jobs | `count` |
+| `job_scheduled` | Logged when a job is successfully scheduled | `job` |
+| `job_next_run` | Logged to report next run time of a job | `next_run`, `time_until` |
+| `job_scheduled_in_past` | Logged when job is scheduled in the past | - |
+| `job_missing_next_run` | Logged when job has no next run time | - |
+| `job_creation_failed` | Logged when job creation fails | `job_id` |
+| `scheduler_debug_error` | Logged when scheduler debug check fails | `error` |
+| `schedule_setup_error` | Logged when schedule setup fails | `error` |
+| `settings_load_error` | Logged when settings load fails | `error` |
+| `settings_save_error` | Logged when settings save fails | `error` |
+| `bootstrap_schedule_setup` | Logged when setting up schedule at bootstrap | - |
+| `settings_saved` | Logged when settings are saved | - |
+| `schedule_updated_success` | Logged when schedule update succeeds | - |
+| `schedule_update_error` | Logged when schedule update fails | `error` |

@@ -42,47 +42,19 @@ def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFilePar
                     rp.set_url(robots_url)
                     rp.read()
                     ctx.robots_cache[domain] = rp
-                    if ctx.json_logs:
-                        log.info(json.dumps({
-                            "component": "cc_scrapycat",
-                            "event": "robots_load_success",
-                            "data": {"domain": domain, "url": robots_url}
-                        }))
-                    else:
-                        log.info(f"Loaded robots.txt for {domain} from {robots_url}")
+                    log.info(f"Loaded robots.txt for {domain} from {robots_url}")
                     return rp
             except Exception as e:
-                if ctx.json_logs:
-                    log.warning(json.dumps({
-                        "component": "cc_scrapycat",
-                        "event": "robots_load_failed",
-                        "data": {"url": robots_url, "error": str(e)}
-                    }))
-                else:
-                    log.warning(f"Failed to load robots.txt from {robots_url}: {e}")
+                log.warning(f"Failed to load robots.txt from {robots_url}: {e}")
                 continue
         
         # If we get here, robots.txt is not accessible
-        if ctx.json_logs:
-            log.info(json.dumps({
-                "component": "cc_scrapycat",
-                "event": "robots_not_found",
-                "data": {"domain": domain}
-            }))
-        else:
-            log.info(f"No accessible robots.txt found for {domain}, allowing all URLs")
+        log.info(f"No accessible robots.txt found for {domain}, allowing all URLs")
         ctx.robots_cache[domain] = None
         return None
         
     except Exception as e:
-        if ctx.json_logs:
-            log.warning(json.dumps({
-                "component": "cc_scrapycat",
-                "event": "robots_error",
-                "data": {"domain": domain, "error": str(e)}
-            }))
-        else:
-            log.warning(f"Error loading robots.txt for {domain}: {e}")
+        log.warning(f"Error loading robots.txt for {domain}: {e}")
         ctx.robots_cache[domain] = None
         return None
 
