@@ -84,6 +84,11 @@ class PluginSettings(BaseModel):
         title="Page load timeout (seconds)",
         description="Maximum time to wait for a page to load before checking for other completed pages (in seconds)"
     )
+    only_scheduled: bool = Field(
+        default=False,
+        title="Only scheduled scraping",
+        description="If enabled, @scrapycat commands in chat will be ignored and only scheduled scraping will run"
+    )
 
     @validator('page_timeout')
     def validate_page_timeout(cls, v):

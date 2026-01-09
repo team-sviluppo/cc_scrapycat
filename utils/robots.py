@@ -1,6 +1,5 @@
 from typing import Optional
 import urllib.parse
-import json
 from urllib.robotparser import RobotFileParser
 from cat.log import log
 from ..core.context import ScrapyCatContext

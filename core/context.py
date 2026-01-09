@@ -2,7 +2,6 @@ from typing import Dict, Set, List, Optional
 from threading import Lock
 from urllib.robotparser import RobotFileParser
 import uuid
-import time
 
 
 class ScrapyCatContext:

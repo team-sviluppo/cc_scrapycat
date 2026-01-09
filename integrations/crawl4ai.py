@@ -1,6 +1,4 @@
 import subprocess
-import json
-from typing import Any
 from cat.log import log
 
 # crawl4ai imports
@@ -14,7 +12,7 @@ except ImportError:
     log.warning("crawl4ai not available. Install it to use advanced crawling features.")
 
 
-def run_crawl4ai_setup(cat: Any) -> str:
+def run_crawl4ai_setup() -> str:
     """Setup crawl4ai dependencies and configuration"""
     try:
         # Runs the setup command just like in the shell
@@ -63,7 +61,7 @@ async def crawl4i(url: str) -> str:
             return ""
 
 
-async def crawl4ai_get_html(url: str, cat: Any, wait_time: int = 0) -> str:
+async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
     """Use crawl4ai to get the rendered HTML of a page"""
     if not CRAWL4AI_AVAILABLE:
         raise ImportError("crawl4ai is not available. Please install it first.")

@@ -5,7 +5,6 @@ from cat.looking_glass.stray_cat import StrayCat
 import os
 import asyncio
 import urllib.parse
-import json
 
 from .core.context import ScrapyCatContext
 from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -234,7 +233,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
 def after_cat_bootstrap(cat):
     settings = cat.mad_hatter.get_plugin().load_settings()
     if settings.get('use_crawl4ai', False) or settings.get('use_crawl4ai_fallback', False):
-        run_crawl4ai_setup(cat)
+        run_crawl4ai_setup()
 
 
 @hook(priority=9)
@@ -243,6 +242,12 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     user_message: str = cat.working_memory.user_message_json.text
 
     if not user_message.startswith("@scrapycat"):
+        return fast_reply
+
+    # Check if only scheduled scraping is enabled
+    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
+    if settings.get("only_scheduled", False):
+        # Skip processing and let the chatbot handle it normally
         return fast_reply
 
     # Handle crawl4ai setup command

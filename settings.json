@@ -1,19 +1,20 @@
 {
     "ingest_pdf": false,
     "skip_get_params": true,
-    "max_depth": 1,
+    "max_depth": 2,
     "max_pages": -1,
     "allowed_extra_roots": "",
     "max_workers": 12,
     "chunk_size": 1024,
     "chunk_overlap": 256,
     "use_crawl4ai": false,
-    "scheduled_command": "@scrapycat https://www.comune.vicopisano.pi.it/",
-    "schedule_hour": 14,
-    "schedule_minute": 50,
+    "scheduled_command": "@scrapycat https://www.comune.vicopisano.pi.it/Vivere-il-comune/",
+    "schedule_hour": 8,
+    "schedule_minute": 4,
     "follow_robots_txt": true,
     "skip_extensions": ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a",
     "page_timeout": 30,
     "use_crawl4ai_fallback": true,
-    "json_logs": true
+    "json_logs": true,
+    "only_scheduled": false
 }
