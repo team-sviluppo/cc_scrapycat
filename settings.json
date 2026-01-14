@@ -7,7 +7,7 @@
     "max_workers": 12,
     "chunk_size": 1024,
     "chunk_overlap": 256,
-    "use_crawl4ai": false,
+    "use_crawl4ai": true,
     "scheduled_command": "@scrapycat https://www.comune.vicopisano.pi.it/Vivere-il-comune/",
     "schedule_hour": 8,
     "schedule_minute": 4,

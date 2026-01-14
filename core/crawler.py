@@ -4,7 +4,6 @@ from typing import List, Tuple, Any, Dict
 import urllib.parse
 import threading
 import requests
-import json
 from bs4 import BeautifulSoup
 from cat.log import log
 from cat.looking_glass.stray_cat import StrayCat
@@ -118,14 +117,7 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                 # Use crawl4ai to get HTML (executes JS)
                 response_text = asyncio.run(crawl4ai_get_html(page, cat))
             except Exception as e:
-                if ctx.json_logs:
-                    log.warning(json.dumps({
-                        "component": "cc_scrapycat",
-                        "event": "crawl4ai_page_fallback",
-                        "data": {"url": page, "error": str(e)}
-                    }))
-                else:
-                    log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
+                log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
                 # Fallback to requests
                 session = get_thread_session()
                 response = session.get(page)
