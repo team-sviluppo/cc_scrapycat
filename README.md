@@ -39,7 +39,7 @@ On the plugin settings you can set:
 
 - **Ingest PDF**: Include PDFs in the ingestion
 - **Skip GET Parameters**: Ignore URLs with ?param=value to prevent duplicates or infinite loops
-- **Use Crawl4AI**: Enables Crawl4AI for better content extraction and JavaScript rendering (requires setup via `@scrapycat crawl4ai-setup`)
+- **Use Crawl4AI for Content Extraction**: Enables Crawl4AI for better content extraction and JavaScript rendering during ingestion (requires setup via `@scrapycat crawl4ai-setup`)
 - **Follow Robots.txt**: Respect robots.txt files when crawling (default: False)
 - **Max Depth**: How many levels of links to follow:
   - `-1`: No limit (default)
@@ -93,6 +93,8 @@ The plugin provides three hooks that allow other plugins to interact with the sc
 - `page_timeout` (int): Timeout in seconds for page loading
 - `skip_extensions` (List[str]): File extensions to skip
 - `user_agent` (str): User agent string used for requests
+
+> **Note:** Other plugins may attach additional temporary fields to the context by returning them in the hook. These fields will persist only for the current scraping session and will be available to subsequent hooks.
 
 ## scrapycat_before_scraping
 

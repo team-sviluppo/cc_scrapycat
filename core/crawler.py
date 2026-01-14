@@ -1,5 +1,4 @@
 import time
-import asyncio
 from typing import List, Tuple, Any, Dict
 import urllib.parse
 import threading
@@ -11,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
 from ..utils.robots import is_url_allowed_by_robots
-from ..integrations.crawl4ai import crawl4ai_get_html, CRAWL4AI_AVAILABLE
 
 
 # Thread-local storage for session objects
@@ -105,24 +103,10 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
     
     new_urls: List[Tuple[str, int]] = []
     try:
-        response_text = ""
-        
-        # Use crawl4ai if enabled and available
-        if ctx.use_crawl4ai and CRAWL4AI_AVAILABLE:
-            try:
-                # Use crawl4ai to get HTML (executes JS)
-                response_text = asyncio.run(crawl4ai_get_html(page, cat))
-            except Exception as e:
-                log.warning(f"crawl4ai failed for {page}, falling back to requests: {e}")
-                # Fallback to requests
-                session = get_thread_session(ctx.user_agent)
-                response = session.get(page)
-                response_text = response.text
-        else:
-            # Use thread-local session for true parallel requests
-            session = get_thread_session(ctx.user_agent)
-            response = session.get(page)
-            response_text = response.text
+        # Use thread-local session for fast parallel requests
+        session = get_thread_session(ctx.user_agent)
+        response = session.get(page, timeout=ctx.page_timeout)
+        response_text = response.text
 
         soup: BeautifulSoup = BeautifulSoup(response_text, "html.parser")
         

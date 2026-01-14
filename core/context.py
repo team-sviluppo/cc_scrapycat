@@ -38,10 +38,14 @@ class ScrapyCatContext:
         self.scheduled: bool = False  # Whether this command is running from scheduler (True) or chat (False)
         self.failed_pages: List[str] = []  # URLs that failed during ingestion
         self.ignored_pages: List[str] = []  # URLs that were scraped but ignored (e.g. unchanged content)
+        
+        # Custom fields added by hooks - allows plugins to extend context dynamically
+        self._custom_fields: Dict[str, any] = {}
     
     def to_hook_context(self) -> Dict[str, any]:
         """Create a serializable context data dictionary for hook execution"""
-        return {
+        # Start with standard fields
+        context = {
             "session_id": str(self.session_id),
             "command": str(self.command),
             "scheduled": bool(self.scheduled),
@@ -54,9 +58,19 @@ class ScrapyCatContext:
             "skip_extensions": [str(ext) for ext in self.skip_extensions],
             "user_agent": str(self.user_agent)
         }
+        # Merge custom fields at the top level so hooks can access them directly
+        context.update(self._custom_fields)
+        return context
     
     def update_from_hook_context(self, context_data: Dict[str, any]) -> None:
         """Update context with data returned from hook execution"""
+        # Known fields - explicitly update
+        known_fields = {
+            "session_id", "command", "scheduled", "scraped_pages", "failed_pages",
+            "ignored_pages", "chunk_size", "chunk_overlap", "page_timeout",
+            "user_agent", "skip_extensions"
+        }
+        
         self.session_id = context_data.get("session_id", self.session_id)
         self.command = context_data.get("command", self.command)
         self.scheduled = context_data.get("scheduled", self.scheduled)
@@ -68,3 +82,17 @@ class ScrapyCatContext:
         self.page_timeout = context_data.get("page_timeout", self.page_timeout)
         self.user_agent = context_data.get("user_agent", self.user_agent)
         self.skip_extensions = context_data.get("skip_extensions", self.skip_extensions)
+        
+        # Custom fields - any field not in known_fields is stored in _custom_fields
+        # This allows hooks to add arbitrary data that persists across hook calls
+        for key, value in context_data.items():
+            if key not in known_fields:
+                self._custom_fields[key] = value
+    
+    def get_custom_field(self, key: str, default=None):
+        """Get a custom field value from the context"""
+        return self._custom_fields.get(key, default)
+    
+    def set_custom_field(self, key: str, value: any) -> None:
+        """Set a custom field value in the context"""
+        self._custom_fields[key] = value
