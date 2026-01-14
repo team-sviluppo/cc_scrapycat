@@ -7,14 +7,15 @@
     "max_workers": 12,
     "chunk_size": 1024,
     "chunk_overlap": 256,
-    "use_crawl4ai": true,
+    "use_crawl4ai": false,
     "scheduled_command": "@scrapycat https://www.comune.vicopisano.pi.it/Vivere-il-comune/",
-    "schedule_hour": 8,
-    "schedule_minute": 4,
+    "schedule_hour": 10,
+    "schedule_minute": 12,
     "follow_robots_txt": true,
     "skip_extensions": ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a",
     "page_timeout": 30,
     "use_crawl4ai_fallback": true,
     "json_logs": true,
-    "only_scheduled": false
+    "only_scheduled": true,
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"
 }

@@ -46,12 +46,7 @@ def setup_scrapycat_schedule(cheshire_cat, settings: Optional[Dict[str, Any]] = 
             )
             stray_cat = StrayCat(system_user)
             
-            try:
-                return process_scrapycat_command(user_message, stray_cat, scheduled=True)
-            finally:
-                # Clean up the working memory cache after the job completes
-                stray_cat.update_working_memory_cache()
-                del stray_cat
+            return process_scrapycat_command(user_message, stray_cat, scheduled=True)
         
         # Schedule the new job: call the wrapper function
         cheshire_cat.white_rabbit.schedule_cron_job(
@@ -129,9 +124,6 @@ def save_plugin_settings_to_file(settings: Dict[str, Any], plugin_path: str) -> 
             with open(settings_file_path, "r") as json_file:
                 old_settings = json.load(json_file)
         except Exception as e:
-            # We don't know json_logs yet, assume False or check settings arg if possible, but settings arg is new settings.
-            # We can check old_settings if we could load them, but we failed.
-            # So we just log error normally.
             log.error(f"Unable to load existing settings: {e}")
     
     # Merge new settings with old ones

@@ -19,11 +19,6 @@ class PluginSettings(BaseModel):
         title="Use crawl4ai for advanced crawling",
         description="Enable crawl4ai for better content extraction and JavaScript rendering"
     )
-    use_crawl4ai_fallback: bool = Field(
-        default=False,
-        title="Use crawl4ai as fallback",
-        description="If enabled, retries fetching pages with crawl4ai (and a wait time) if no links are found with standard scraping. Useful for dynamic pages."
-    )
     follow_robots_txt: bool = Field(
         default=False,
         title="Follow robots.txt",
@@ -75,9 +70,9 @@ class PluginSettings(BaseModel):
         description="Minute of the hour to run the scheduled command (0-59)",
     )
     skip_extensions: str = Field(
-        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a, .crdownload, .odp, ,ppt, .pptx",
+        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a,.crdownload,.odp,.ppt,.pptx",
         title="File extensions to skip",
-        description="Comma-separated list of file extensions to skip during crawling (e.g., '.jpg,.png,.zip')"
+        description="Comma-separated list of file extensions to skip during crawling. Extensions can be with or without leading dot (e.g., '.jpg,png,zip' or 'jpg,.png,.zip')"
     )
     page_timeout: int = Field(
         default=30,
@@ -88,6 +83,11 @@ class PluginSettings(BaseModel):
         default=False,
         title="Only scheduled scraping",
         description="If enabled, @scrapycat commands in chat will be ignored and only scheduled scraping will run"
+    )
+    user_agent: str = Field(
+        default="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
+        title="User agent string",
+        description="User agent string to use for HTTP requests during crawling"
     )
 
     @validator('page_timeout')

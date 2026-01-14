@@ -11,10 +11,10 @@ try:
 except ImportError:
     # Fallback if import fails
     import requests
-    def get_thread_session():
+    def get_thread_session(user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"):
         session = requests.Session()
         session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"
+            "User-Agent": user_agent
         })
         return session
 
@@ -34,7 +34,7 @@ def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFilePar
             robots_url = f"{protocol}://{domain}/robots.txt"
             try:
                 # Use thread-local session instead of shared session
-                session = get_thread_session()
+                session = get_thread_session(ctx.user_agent)
                 response = session.get(robots_url, timeout=10)
                 if response.status_code == 200:
                     rp = RobotFileParser()
@@ -77,6 +77,5 @@ def is_url_allowed_by_robots(ctx: ScrapyCatContext, url: str) -> bool:
         return True
     
     # Check if the URL is allowed for our user agent
-    session = get_thread_session()
-    user_agent = session.headers.get('User-Agent', '*')
+    user_agent = ctx.user_agent
     return robots_parser.can_fetch(user_agent, url)
