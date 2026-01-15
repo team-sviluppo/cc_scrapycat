@@ -1,6 +1,5 @@
 from typing import Dict, Set, List, Optional
 from threading import Lock
-import requests
 from urllib.robotparser import RobotFileParser
 import uuid
 
@@ -20,41 +19,80 @@ class ScrapyCatContext:
         self.robots_cache: Dict[str, Optional[RobotFileParser]] = {}  # Cache robots.txt parsers by domain
         self.visited_lock: Lock = Lock()  # Thread-safe access to visited_pages
         self.max_workers: int = 1   # Configurable thread pool size
+        self.skip_extensions: List[str] = []  # List of file extensions to skip during crawling
         self.chunk_size: int = 512  # Size of text chunks for ingestion
         self.chunk_overlap: int = 128  # Overlap between consecutive chunks
-        # Session reuse for better performance
-        self.session: requests.Session = requests.Session()  # Reuse connections
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"
-        })
+        self.page_timeout: int = 30  # Timeout for page loading operations
+        self.user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"  # User agent for HTTP requests
         # Store scraped pages for sequential ingestion
         self.scraped_pages: List[str] = []
         self.scraped_pages_lock: Lock = Lock()  # Thread-safe access to scraped_pages
+        
+        # UI update throttling
+        self.last_update_time: float = 0.0
+        self.update_lock: Lock = Lock()
         
         # Session tracking fields for coordination with other plugins
         self.session_id: str = str(uuid.uuid4())  # Unique identifier for this scraping session
         self.command: str = ""  # The command that triggered this scraping session
         self.scheduled: bool = False  # Whether this command is running from scheduler (True) or chat (False)
         self.failed_pages: List[str] = []  # URLs that failed during ingestion
+        self.ignored_pages: List[str] = []  # URLs that were scraped but ignored (e.g. unchanged content)
+        
+        # Custom fields added by hooks - allows plugins to extend context dynamically
+        self._custom_fields: Dict[str, any] = {}
     
     def to_hook_context(self) -> Dict[str, any]:
         """Create a serializable context data dictionary for hook execution"""
-        return {
+        # Start with standard fields
+        context = {
             "session_id": str(self.session_id),
             "command": str(self.command),
             "scheduled": bool(self.scheduled),
             "scraped_pages": [str(url) for url in self.scraped_pages],
             "failed_pages": [str(url) for url in self.failed_pages],
+            "ignored_pages": [str(url) for url in self.ignored_pages],
             "chunk_size": int(self.chunk_size),
-            "chunk_overlap": int(self.chunk_overlap)
+            "chunk_overlap": int(self.chunk_overlap),
+            "page_timeout": int(self.page_timeout),
+            "skip_extensions": [str(ext) for ext in self.skip_extensions],
+            "user_agent": str(self.user_agent)
         }
+        # Merge custom fields at the top level so hooks can access them directly
+        context.update(self._custom_fields)
+        return context
     
     def update_from_hook_context(self, context_data: Dict[str, any]) -> None:
         """Update context with data returned from hook execution"""
+        # Known fields - explicitly update
+        known_fields = {
+            "session_id", "command", "scheduled", "scraped_pages", "failed_pages",
+            "ignored_pages", "chunk_size", "chunk_overlap", "page_timeout",
+            "user_agent", "skip_extensions"
+        }
+        
         self.session_id = context_data.get("session_id", self.session_id)
         self.command = context_data.get("command", self.command)
         self.scheduled = context_data.get("scheduled", self.scheduled)
         self.scraped_pages = context_data.get("scraped_pages", self.scraped_pages)
         self.failed_pages = context_data.get("failed_pages", self.failed_pages)
+        self.ignored_pages = context_data.get("ignored_pages", self.ignored_pages)
         self.chunk_size = context_data.get("chunk_size", self.chunk_size)
         self.chunk_overlap = context_data.get("chunk_overlap", self.chunk_overlap)
+        self.page_timeout = context_data.get("page_timeout", self.page_timeout)
+        self.user_agent = context_data.get("user_agent", self.user_agent)
+        self.skip_extensions = context_data.get("skip_extensions", self.skip_extensions)
+        
+        # Custom fields - any field not in known_fields is stored in _custom_fields
+        # This allows hooks to add arbitrary data that persists across hook calls
+        for key, value in context_data.items():
+            if key not in known_fields:
+                self._custom_fields[key] = value
+    
+    def get_custom_field(self, key: str, default=None):
+        """Get a custom field value from the context"""
+        return self._custom_fields.get(key, default)
+    
+    def set_custom_field(self, key: str, value: any) -> None:
+        """Set a custom field value in the context"""
+        self._custom_fields[key] = value

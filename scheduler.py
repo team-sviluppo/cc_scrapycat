@@ -31,20 +31,6 @@ def setup_scrapycat_schedule(cheshire_cat, settings: Optional[Dict[str, Any]] = 
         if not scheduled_command:
             log.info("No scheduled ScrapyCat command configured, job removed")
             return
-            
-        # Validate schedule parameters
-        if not (0 <= schedule_hour <= 23):
-            log.error(f"Invalid schedule hour: {schedule_hour}. Must be 0-23.")
-            return
-            
-        if not (0 <= schedule_minute <= 59):
-            log.error(f"Invalid schedule minute: {schedule_minute}. Must be 0-59.")
-            return
-            
-        # Validate command format
-        if not scheduled_command.startswith("@scrapycat"):
-            log.error(f"Invalid scheduled command format: {scheduled_command}. Must start with @scrapycat")
-            return
         
         # Import process_scrapycat_command from the main module
         from .scrapycat import process_scrapycat_command
@@ -60,12 +46,7 @@ def setup_scrapycat_schedule(cheshire_cat, settings: Optional[Dict[str, Any]] = 
             )
             stray_cat = StrayCat(system_user)
             
-            try:
-                return process_scrapycat_command(user_message, stray_cat, scheduled=True)
-            finally:
-                # Clean up the working memory cache after the job completes
-                stray_cat.update_working_memory_cache()
-                del stray_cat
+            return process_scrapycat_command(user_message, stray_cat, scheduled=True)
         
         # Schedule the new job: call the wrapper function
         cheshire_cat.white_rabbit.schedule_cron_job(
@@ -101,10 +82,10 @@ def setup_scrapycat_schedule(cheshire_cat, settings: Optional[Dict[str, Any]] = 
             job: Optional[Dict[str, Any]] = cheshire_cat.white_rabbit.get_job(job_id)
             if job:
                 log.info(f"Job successfully added to scheduler: {job}")
+                
                 # Log next run time - job is a dictionary, not an object
                 if 'next_run' in job:
                     log.info(f"Next scheduled run: {job['next_run']}")
-                    
                     time_diff = job['next_run'] - current_utc
                     log.info(f"Time until next run: {time_diff}")
                     

@@ -5,7 +5,6 @@ from cat.looking_glass.stray_cat import StrayCat
 import os
 import asyncio
 import urllib.parse
-import time
 
 from .core.context import ScrapyCatContext
 from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -81,10 +80,19 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     ctx.max_workers = settings.get("max_workers", 1)  # Default to 1 if not set
     ctx.chunk_size = settings.get("chunk_size", 512)  # Default to 512 if not set
     ctx.chunk_overlap = settings.get("chunk_overlap", 128)  # Default to 128 if not set
-
+    ctx.page_timeout = settings.get("page_timeout", 30)  # Default to 30 seconds if not set
+    ctx.user_agent = settings.get("user_agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0")  # User agent string
+    
+    # Parse skip extensions from settings and normalize them (ensure they all start with a dot)
+    skip_extensions_str = settings.get("skip_extensions", ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc")
+    ctx.skip_extensions = [
+        ext.strip() if ext.strip().startswith('.') else f'.{ext.strip()}'
+        for ext in skip_extensions_str.split(",") if ext.strip()
+    ]
     # Check if crawl4ai is requested but not available
     if ctx.use_crawl4ai and not CRAWL4AI_AVAILABLE:
-        log.warning("crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling.")
+        msg = "crawl4ai requested but not available. Run '@scrapycat crawl4ai-setup' first. Falling back to default crawling."
+        log.warning(msg)
         ctx.use_crawl4ai = False
 
     # Extract root domains and paths from starting URLs
@@ -110,32 +118,41 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     if ctx.root_domains:
         log.info(f"Recursive domains configured: {len(ctx.root_domains)} domains")
 
-    # Fire before_scrape hook with serializable context data
+    # Fire before_scraping hook with serializable context data
     try:
         context_data = ctx.to_hook_context()
-        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scrape", context_data, cat=cat)
+        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scraping", context_data, cat=cat)
         ctx.update_from_hook_context(context_data)
     except Exception as hook_error:
-        log.warning(f"Error executing before_scrape hook: {hook_error}")
+        log.warning(f"Error executing before_scraping hook: {hook_error}")
 
     # Start crawling from all starting URLs
     try:
         # Record start time for the whole crawling+ingestion operation
+        import time
         start_time = time.time()
         crawler(ctx, cat, starting_urls)
-        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped")
         
-        # Fire after_crawl hook with serializable context data
+        log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped, {len(ctx.failed_pages)} failed/timed out")
+        
+        # Fire after_scraping hook with serializable context data
         try:
             context_data = ctx.to_hook_context()
-            log.debug(f"Firing after_crawl hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            cat.mad_hatter.execute_hook("scrapycat_after_crawl", context_data, cat=cat)
+            log.debug(f"Firing after_scraping hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            context_data = cat.mad_hatter.execute_hook("scrapycat_after_scraping", context_data, cat=cat)
+            ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
-            log.warning(f"Error executing after_crawl hook: {hook_error}")
+            log.warning(f"Error executing after_scraping hook: {hook_error}")
         
         # Sequential ingestion after parallel scraping is complete
         if not ctx.scraped_pages:
-            return "No pages were successfully scraped"
+            # Compute elapsed time even if no pages scraped
+            elapsed_seconds = time.time() - start_time
+            minutes = round(elapsed_seconds / 60.0, 2)
+            
+            if ctx.failed_pages:
+                return f"No pages were successfully scraped. {len(ctx.failed_pages)} pages failed or timed out in {minutes} minutes."
+            return f"No pages were successfully scraped in {minutes} minutes."
         
         ingested_count: int = 0
         for i, scraped_url in enumerate(ctx.scraped_pages):
@@ -191,25 +208,34 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         # Compute elapsed time in minutes (rounded to 2 decimal places)
         elapsed_seconds = time.time() - start_time
         minutes = round(elapsed_seconds / 60.0, 2)
-        response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed in {minutes} minutes"
+        
+        # Build response message
+        if ctx.failed_pages:
+            response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed or timed out in {minutes} minutes"
+        else:
+            response: str = f"{ingested_count} URLs successfully imported in {minutes} minutes"
 
     except Exception as e:
-        log.error(f"ScrapyCat operation failed: {str(e)}")
-        response = f"ScrapyCat failed: {str(e)}"
+        error_msg = str(e)
+        log.error(f"ScrapyCat operation failed: {error_msg}")
+        response = f"ScrapyCat failed: {error_msg}"
     finally:
-        # Fire after_scrape hook with serializable context data
+        # Fire after_ingestion hook with serializable context data
         try:
             context_data = ctx.to_hook_context()
-            log.debug(f"Firing after_scrape hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            cat.mad_hatter.execute_hook("scrapycat_after_scrape", context_data, cat=cat)
+            log.debug(f"Firing after_ingestion hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
+            cat.mad_hatter.execute_hook("scrapycat_after_ingestion", context_data, cat=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
-            log.warning(f"Error executing after_scrape hook: {hook_error}")
+            log.warning(f"Error executing after_ingestion hook: {hook_error}")
         
-        # Always close the session
-        ctx.session.close()
-
     return response
+
+@hook
+def after_cat_bootstrap(cat):
+    settings = cat.mad_hatter.get_plugin().load_settings()
+    if settings.get('use_crawl4ai', False):
+        run_crawl4ai_setup()
 
 
 @hook(priority=9)
@@ -218,6 +244,12 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
     user_message: str = cat.working_memory.user_message_json.text
 
     if not user_message.startswith("@scrapycat"):
+        return fast_reply
+
+    # Check if only scheduled scraping is enabled
+    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
+    if settings.get("only_scheduled", False):
+        # Skip processing and let the chatbot handle it normally
         return fast_reply
 
     # Handle crawl4ai setup command
@@ -233,13 +265,13 @@ def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
 # Empty hook placeholders to skip the warning about missing hooks
 
 @hook()
-def scrapycat_before_scrape(context: Dict[str, Any], cat: StrayCat):
+def scrapycat_before_scraping(context: Dict[str, Any], cat: StrayCat):
     return context
 
 @hook()
-def scrapycat_after_crawl(context: Dict[str, Any], cat: StrayCat):
+def scrapycat_after_scraping(context: Dict[str, Any], cat: StrayCat):
     return context
 
 @hook()
-def scrapycat_after_scrape(context: Dict[str, Any], cat: StrayCat):
+def scrapycat_after_ingestion(context: Dict[str, Any], cat: StrayCat):
     return context

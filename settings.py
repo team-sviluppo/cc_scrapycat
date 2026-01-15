@@ -69,6 +69,33 @@ class PluginSettings(BaseModel):
         title="Schedule minute",
         description="Minute of the hour to run the scheduled command (0-59)",
     )
+    skip_extensions: str = Field(
+        default=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc,.m4a,.crdownload,.odp,.ppt,.pptx",
+        title="File extensions to skip",
+        description="Comma-separated list of file extensions to skip during crawling. Extensions can be with or without leading dot (e.g., '.jpg,png,zip' or 'jpg,.png,.zip')"
+    )
+    page_timeout: int = Field(
+        default=30,
+        title="Page load timeout (seconds)",
+        description="Maximum time to wait for a page to load before checking for other completed pages (in seconds)"
+    )
+    only_scheduled: bool = Field(
+        default=False,
+        title="Only scheduled scraping",
+        description="If enabled, @scrapycat commands in chat will be ignored and only scheduled scraping will run"
+    )
+    user_agent: str = Field(
+        default="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0",
+        title="User agent string",
+        description="User agent string to use for HTTP requests during crawling"
+    )
+
+    @validator('page_timeout')
+    def validate_page_timeout(cls, v):
+        """Validate that page timeout is reasonable (5-300 seconds)"""
+        if not 5 <= v <= 300:
+            raise ValueError('Page timeout must be between 5 and 300 seconds')
+        return v
 
     @validator('schedule_hour')
     def validate_schedule_hour(cls, v):
